@@ -1,0 +1,41 @@
+{
+    // Render inline image phantoms automatically when a Markdown file loads.
+    "auto_show_on_load": true,
+
+    // Size each image renders at initially: "thumbnail", "medium", or "original".
+    "default_size": "thumbnail",
+
+    // Download and render remote http(s) images (cached under the OS temp dir).
+    "render_remote": true,
+
+    // Thumbnail state: longest side capped to this many pixels (initial state).
+    "thumbnail_width": 180,
+
+    // Medium state: image scaled to fit within these bounds.
+    "max_image_width": 800,
+    "max_image_height": 600,
+
+    // Drop the "medium" option when its width is within this fraction of the original's
+    // (same aspect ratio, so width decides). 0.1 = hide medium if it's >=90% of original width,
+    // leaving a thumbnail <-> original toggle. Set to 0 to always show all three.
+    "medium_merge_threshold": 0.1,
+
+    // Extensions treated as images (svg excluded: minihtml can't render it).
+    "image_extensions": [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"],
+
+    // Cache folder name (under the OS temp dir) for downloaded remote images.
+    "remote_cache_dirname": "SublimeMarkdownRich",
+
+    // GitHub token for private-repo images (PR descriptions, user-attachments).
+    // Sent as "Authorization: Bearer <token>" ONLY to github.com / *.githubusercontent.com,
+    // and dropped on cross-host redirects (e.g. the signed S3 URL it forwards to).
+    // A fine-grained token with "Contents: read" on the repo is enough.
+    "github_token": "",
+
+    // Preferred for security: read the token from a file OUTSIDE iCloud-synced User settings.
+    // e.g. "~/.config/markdown_rich/github_token". Used only when github_token above is empty.
+    "github_token_file": "",
+
+    // Accent color for inline status annotations (loading / not-found / fetch-failed).
+    "status_color": "#c0863a"
+}

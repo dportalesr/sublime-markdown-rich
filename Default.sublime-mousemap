@@ -1,0 +1,10 @@
+[
+    {
+        "button": "button1",
+        "count": 2,
+        "modifiers": [],
+        "press_command": "drag_select",
+        "press_args": {"by": "words"},
+        "command": "markdown_rich_open_link"
+    }
+]

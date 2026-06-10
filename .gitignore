@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.idea/
+.vscode/
+*.swp
+.local/
+
+# Override global gitignore — these are the plugin's manifest files
+!*.sublime-commands
+!*.sublime-keymap
+!*.sublime-mousemap
+!*.sublime-menu
+!*.sublime-settings
+!*.sublime-syntax

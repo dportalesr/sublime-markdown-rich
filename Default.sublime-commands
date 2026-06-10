@@ -1,0 +1,14 @@
+[
+    {"caption": "MarkdownRich: Show inline images", "command": "markdown_rich_show_images"},
+    {"caption": "MarkdownRich: Hide inline images", "command": "markdown_rich_clear_images"},
+    {"caption": "MarkdownRich: Toggle inline images", "command": "markdown_rich_toggle_images"},
+    {"caption": "MarkdownRich: Cycle all image sizes", "command": "markdown_rich_cycle_all_images"},
+    {
+        "caption": "MarkdownRich: Settings",
+        "command": "edit_settings",
+        "args": {
+            "base_file": "${packages}/MarkdownRich/MarkdownRich.sublime-settings",
+            "default": "{\n\t$0\n}\n"
+        }
+    }
+]
