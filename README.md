@@ -101,3 +101,7 @@ A fine-grained token with `Contents: read` on the relevant repos is enough.
 - Non-image states (loading, missing, fetch-failed) render as `add_regions(annotations=...)` so they don't push layout around like a block phantom would.
 - Remote fetches run on a background `threading.Thread` and call `sublime.set_timeout(..., 0)` to re-enter the main thread for re-render.
 - Image dimensions are probed by reading the file header (no PIL/Pillow dependency) — PNG `IHDR`, GIF logical screen descriptor, JPEG `SOFn` markers.
+
+## License
+
+[MIT](LICENSE).
