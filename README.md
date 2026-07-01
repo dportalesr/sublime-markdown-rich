@@ -1,8 +1,8 @@
 # MarkdownRich
 
-Inline image phantoms and double-click link opening for Markdown in Sublime Text.
+Inline image phantoms and link opening (click or `ctrl+enter`) for Markdown in Sublime Text.
 
-MarkdownRich auto-renders `![](...)` and raw HTML `<img>` tags as phantoms next to the source line. Each image gets a size toggle (thumbnail → medium → original) in its footer. Double-clicking any link or URL opens it — local paths in Sublime, remote URLs in the browser.
+MarkdownRich auto-renders `![](...)` and raw HTML `<img>` tags as phantoms next to the source line. Each image gets a size toggle (thumbnail → medium → original) in its footer. Putting the caret on any link or URL and pressing `ctrl+enter` (or triple-clicking it) opens it — remote URLs in the browser, local files in Sublime. File links may carry a `:line` (or `:line:col`) suffix to jump straight to a position, and open side-by-side by default so the Markdown stays visible.
 
 ## Features
 
@@ -12,7 +12,9 @@ MarkdownRich auto-renders `![](...)` and raw HTML `<img>` tags as phantoms next 
 - **Project-root path resolution** — relative paths in projects resolve against the project root first, falling back to the current file's directory; non-project windows keep file-dir resolution
 - **Remote image caching** — http(s) images fetched on a background thread, cached under the OS temp dir
 - **Private GitHub images** — optional bearer-token auth for `github.com` and `*.githubusercontent.com`; token dropped on cross-host redirect (signed S3)
-- **Double-click to open links** — local files open in a new tab, URLs in the browser; word-select on plain text is preserved
+- **Open links from the keyboard or mouse** — caret on a link + `ctrl+enter`, or triple-click; local files open in Sublime, URLs in the browser; word-select on plain text is preserved
+- **Jump to line/column** — a `[label](path:line)` or `path:line:col` suffix opens the file at that position (`ENCODED_POSITION`)
+- **Side-by-side by default** — file links open in an adjacent pane (splitting into two columns when needed) so the Markdown stays in view; toggle with `open_link_side_by_side`
 - **Status annotations** — loading / not-found / fetch-failed states render as inline annotations (with retry link), not phantoms
 
 ## Requirements
@@ -42,7 +44,7 @@ Then restart Sublime Text (or just open any Markdown file — `plugin_loaded` wi
 | `MarkdownRich: Cycle all image sizes` | Advance every phantom one step in its size cycle |
 | `MarkdownRich: Settings` | Open user settings side-by-side with defaults |
 
-A double-click on a link or URL invokes `markdown_rich_open_link` via the bundled `Default.sublime-mousemap`.
+Opening a link invokes `markdown_rich_open_link`, bound two ways out of the box: `ctrl+enter` when the caret is on a link (`Default (OSX).sublime-keymap`, scoped to `meta.link` / `markup.underline.link` so it passes through elsewhere) and a triple-click (`Default.sublime-mousemap`). The command accepts a `side_by_side` arg (`true`/`false`) that overrides the `open_link_side_by_side` setting per binding, e.g. add `"args": {"side_by_side": false}` to the mousemap to keep triple-click opening in place.
 
 ## Path resolution
 
@@ -54,6 +56,8 @@ Relative paths in `[text](path)` and `![alt](path)` are resolved against multipl
 The first candidate that exists on disk wins. If none exist, the project-root candidate is reported as the missing path.
 
 This means a link like `[design](docs/design.md)` resolves against the project root from any file in the project — without forcing every link to use `./` or `../` segments.
+
+A trailing `:line` or `:line:col` is stripped before resolution and reapplied as the caret position, so `[deactivate](app/models/mower_alert_report.rb:167)` opens that file at line 167. Absolute paths, `~`, and `file:///` URLs are all accepted (the `file://` scheme colon is never mistaken for a line number).
 
 ## Settings
 
@@ -71,6 +75,7 @@ This means a link like `[design](docs/design.md)` resolves against the project r
 | `github_token` | `""` | Optional bearer token for private-repo images (see below) |
 | `github_token_file` | `""` | Path to a file containing the token; preferred over `github_token` |
 | `status_color` | `"#c0863a"` | Accent color for inline status annotations (loading / missing / error) |
+| `open_link_side_by_side` | `true` | Open file links in an adjacent pane (splitting into two columns when the window has one group); only affects local files, not http(s) |
 
 ## Private GitHub images
 

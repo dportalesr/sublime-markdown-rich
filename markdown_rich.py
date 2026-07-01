@@ -96,6 +96,36 @@ def _resolve_local(view, url):
     return os.path.normpath(os.path.join(bases[0], url))
 
 
+_POSITION_RE = re.compile(r':(\d+)(?::(\d+))?$')
+
+
+def _split_position(target):
+    """Split a `path:line[:col]` file reference into (path, line, col).
+
+    Line/col are ints when a trailing `:line` (optionally `:line:col`) is present,
+    else None. Only a trailing digit group is treated as a position, so a colon
+    elsewhere (e.g. the `file://` scheme separator) leaves the path intact.
+    """
+    m = _POSITION_RE.search(target)
+    if not m:
+        return target, None, None
+    col = int(m.group(2)) if m.group(2) else None
+    return target[:m.start()], int(m.group(1)), col
+
+
+def _side_group(window):
+    """Group index of the pane beside the active one, splitting the window into two
+    columns first when it has a single group. Returns the next group cyclically, so a
+    Markdown pane opens its links in the adjacent pane and stays visible."""
+    if window.num_groups() < 2:
+        window.set_layout({
+            "cols": [0.0, 0.5, 1.0],
+            "rows": [0.0, 1.0],
+            "cells": [[0, 0, 1, 1], [1, 0, 2, 1]],
+        })
+    return (window.active_group() + 1) % window.num_groups()
+
+
 def _target_at(view, point):
     """Return (is_image, url) for the link/url under `point`, or None."""
     line = view.line(point)
@@ -508,7 +538,7 @@ class MarkdownRichCycleAllImagesCommand(sublime_plugin.TextCommand):
 class MarkdownRichOpenLinkCommand(sublime_plugin.TextCommand):
     """Open the link/url under the cursor; no-op otherwise (preserves double-click word-select)."""
 
-    def run(self, edit):
+    def run(self, edit, side_by_side=None):
         view = self.view
         if not len(view.sel()):
             return
@@ -521,12 +551,26 @@ class MarkdownRichOpenLinkCommand(sublime_plugin.TextCommand):
         url = target[1]
         if re.match(r'^(https?|ftp|mailto):', url, re.I):
             webbrowser.open(url)
-        else:
-            path = _resolve_local(view, url)
-            if path and os.path.exists(path):
-                view.window().open_file(path)
-            else:
-                sublime.status_message("MarkdownRich: cannot open " + url)
+            return
+        file_ref, line, col = _split_position(url)
+        path = _resolve_local(view, file_ref)
+        if not (path and os.path.exists(path)):
+            sublime.status_message("MarkdownRich: cannot open " + url)
+            return
+        if side_by_side is None:
+            side_by_side = _settings().get("open_link_side_by_side", True)
+        self._open(path, line, col, side_by_side)
+
+    def _open(self, path, line, col, side_by_side):
+        window = self.view.window()
+        loc, flags = path, 0
+        if line is not None:
+            loc = "%s:%d" % (path, line)
+            if col is not None:
+                loc += ":%d" % col
+            flags = sublime.ENCODED_POSITION
+        group = _side_group(window) if side_by_side else -1
+        window.open_file(loc, flags, group=group)
 
 
 def plugin_loaded():

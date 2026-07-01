@@ -1,0 +1,15 @@
+[
+  // Open the Markdown link/url under the caret (label or url side). Gated to link
+  // scopes so ctrl+enter passes through elsewhere (e.g. PlainNotes heading bindings).
+  {
+    "keys": ["ctrl+enter"],
+    "command": "markdown_rich_open_link",
+    "context": [
+      {
+        "key": "selector",
+        "operator": "equal",
+        "operand": "text.html.markdown meta.link, text.html.markdown markup.underline.link"
+      }
+    ]
+  }
+]

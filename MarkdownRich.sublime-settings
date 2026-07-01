@@ -37,5 +37,10 @@
     "github_token_file": "",
 
     // Accent color for inline status annotations (loading / not-found / fetch-failed).
-    "status_color": "#c0863a"
+    "status_color": "#c0863a",
+
+    // Open file links (ctrl+enter / triple-click) in a side pane, splitting the
+    // window into two columns when it has a single group. Keeps the Markdown
+    // visible beside the opened file. Only affects local file links, not http(s).
+    "open_link_side_by_side": true
 }
