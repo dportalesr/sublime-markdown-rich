@@ -14,7 +14,7 @@ MarkdownRich auto-renders `![](...)` and raw HTML `<img>` tags as phantoms next 
 - **Private GitHub images** — optional bearer-token auth for `github.com` and `*.githubusercontent.com`; token dropped on cross-host redirect (signed S3)
 - **Open links from the keyboard or mouse** — caret on a link + `ctrl+enter`, or triple-click; local files open in Sublime, URLs in the browser; word-select on plain text is preserved
 - **Jump to line/column** — a `[label](path:line)` or `path:line:col` suffix opens the file at that position (`ENCODED_POSITION`)
-- **Side-by-side by default** — file links open in an adjacent pane (splitting into two columns when needed) so the Markdown stays in view; toggle with `open_link_side_by_side`
+- **Side-by-side by default** — the opened file is placed in the Markdown's own group and both sheets are selected, so Sublime tiles them side-by-side without touching your window layout; toggle with `open_link_side_by_side`
 - **Status annotations** — loading / not-found / fetch-failed states render as inline annotations (with retry link), not phantoms
 
 ## Requirements
@@ -75,7 +75,7 @@ A trailing `:line` or `:line:col` is stripped before resolution and reapplied as
 | `github_token` | `""` | Optional bearer token for private-repo images (see below) |
 | `github_token_file` | `""` | Path to a file containing the token; preferred over `github_token` |
 | `status_color` | `"#c0863a"` | Accent color for inline status annotations (loading / missing / error) |
-| `open_link_side_by_side` | `true` | Open file links in an adjacent pane (splitting into two columns when the window has one group); only affects local files, not http(s) |
+| `open_link_side_by_side` | `true` | Open file links beside the origin Markdown by selecting both sheets in the same group (Sublime tiles them; window layout unchanged); local files only, not http(s) |
 
 ## Private GitHub images
 

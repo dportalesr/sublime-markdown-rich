@@ -113,17 +113,25 @@ def _split_position(target):
     return target[:m.start()], int(m.group(1)), col
 
 
-def _side_group(window):
-    """Group index of the pane beside the active one, splitting the window into two
-    columns first when it has a single group. Returns the next group cyclically, so a
-    Markdown pane opens its links in the adjacent pane and stays visible."""
-    if window.num_groups() < 2:
-        window.set_layout({
-            "cols": [0.0, 0.5, 1.0],
-            "rows": [0.0, 1.0],
-            "cells": [[0, 0, 1, 1], [1, 0, 2, 1]],
-        })
-    return (window.active_group() + 1) % window.num_groups()
+def _reveal_beside(window, origin, new_view):
+    """Place `new_view` in `origin`'s group and select both sheets, so Sublime tiles
+    them side-by-side within the current group without changing the window layout.
+
+    Mirrors Parley's edit/original buffer reveal (see edit_view.py). No-op when the
+    two views coincide, when the origin isn't in a group, or on Sublime builds
+    without `select_sheets` (< 4050) — those just get a plain tab.
+    """
+    if origin is None or origin == new_view:
+        return
+    cur_group, _ = window.get_view_index(origin)
+    if cur_group < 0:
+        return
+    new_group, _ = window.get_view_index(new_view)
+    if new_group != cur_group:
+        window.set_view_index(new_view, cur_group, len(window.views_in_group(cur_group)))
+    select_sheets = getattr(window, "select_sheets", None)
+    if select_sheets is not None:
+        select_sheets([origin.sheet(), new_view.sheet()])
 
 
 def _target_at(view, point):
@@ -569,21 +577,24 @@ class MarkdownRichOpenLinkCommand(sublime_plugin.TextCommand):
             if col is not None:
                 loc += ":%d" % col
             flags = sublime.ENCODED_POSITION
-        group = _side_group(window) if side_by_side else -1
-        window.open_file(loc, flags, group=group)
+        new_view = window.open_file(loc, flags)
+        if side_by_side:
+            _reveal_beside(window, self.view, new_view)
 
 
 def plugin_loaded():
-    """Render images in already-open Markdown buffers (plugin reload, or session restore at startup)."""
+    """Style refs + render images in already-open Markdown buffers (plugin reload / session restore)."""
     sublime.set_timeout_async(_show_open_markdown_views, 100)
 
 
 def _show_open_markdown_views():
-    if not _settings().get("auto_show_on_load", True):
-        return
+    auto_show = _settings().get("auto_show_on_load", True)
     for window in sublime.windows():
         for view in window.views():
             if view.is_loading():
                 continue
-            if "Markdown" in (view.settings().get("syntax") or ""):
+            if "Markdown" not in (view.settings().get("syntax") or ""):
+                continue
+            _style_section_refs(view)   # always-on, independent of image auto-show
+            if auto_show:
                 _manager(view).show()
