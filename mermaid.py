@@ -64,6 +64,23 @@ def find_blocks(text):
     return blocks
 
 
+def block_at(blocks, point):
+    """The block containing ``point``, or None.
+
+    Fence lines count as inside, so acting on a diagram works with the cursor parked
+    on the ```` ```mermaid ```` line, which is where a folded block leaves it.
+
+    :param blocks: :class:`Block` values
+    :param int point: buffer offset
+    :returns: the enclosing block, or None
+    :rtype: Block or None
+    """
+    for b in blocks:
+        if b.start <= point <= b.end:
+            return b
+    return None
+
+
 def cache_key(source, theme, background, scale):
     """Content address for a rendered diagram: same inputs, same PNG.
 

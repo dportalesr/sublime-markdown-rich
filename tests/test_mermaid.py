@@ -12,7 +12,7 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
-                     luminance, auto_theme, with_theme_directive)
+                     luminance, auto_theme, with_theme_directive, block_at)
 
 
 def _doc(*lines):
@@ -87,6 +87,33 @@ def test_find_blocks_empty_body():
     blocks = find_blocks(text)
     assert len(blocks) == 1
     assert blocks[0].source == ""
+
+
+# --- block_at: which block is the cursor in --------------------------------
+
+def test_block_at_finds_the_enclosing_block():
+    text = _doc("intro", "```mermaid", "graph TD; A-->B;", "```", "outro")
+    b = find_blocks(text)[0]
+    assert block_at([b], b.start) is b
+    assert block_at([b], b.body_start + 2) is b
+    assert block_at([b], b.end) is b
+
+
+def test_block_at_outside_any_block():
+    text = _doc("intro", "```mermaid", "graph TD; A-->B;", "```", "outro")
+    blocks = find_blocks(text)
+    assert block_at(blocks, 0) is None
+    assert block_at(blocks, len(text) - 1) is None
+
+
+def test_block_at_picks_the_right_one_of_several():
+    text = _doc("```mermaid", "A", "```", "x", "```mermaid", "B", "```")
+    first, second = find_blocks(text)
+    assert block_at([first, second], second.body_start + 1) is second
+
+
+def test_block_at_with_no_blocks():
+    assert block_at([], 5) is None
 
 
 # --- cache_key: content-addressed render cache ------------------------------

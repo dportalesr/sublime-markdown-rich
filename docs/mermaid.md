@@ -13,6 +13,8 @@ graph TD;
 
 The ` ```mermaid ` line stays visible as the fold handle, the rest of the block folds away, and the rendered PNG appears below it.
 
+Beside it sits `Open image`, which opens the rendered PNG in its own tab. A phantom is capped to the width of the view, but the image viewer isn't, so a dense diagram can be read at full size or zoomed. It's also the file itself, if you want to save or share it.
+
 The state control is a single inline link at the end of that fence line, in the same spot in every state: it reads `Show source` while the diagram shows, `Show diagram` while the source shows, and carries the error plus a `retry` link when a render failed. Clicking the diagram itself is a shortcut for `Show source`. `MarkdownRich: Toggle mermaid diagrams` flips every block in the view at once.
 
 Putting the caret inside a block's body also reveals its source, since a folded region can't be typed into; moving the caret out (or clicking `Show diagram`, which parks the caret on the fence line for you) folds it back.

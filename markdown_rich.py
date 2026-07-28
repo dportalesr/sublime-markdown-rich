@@ -21,14 +21,14 @@ import sublime_plugin
 try:
     from .section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
     from .mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
-                          auto_theme, with_theme_directive)
+                          auto_theme, with_theme_directive, block_at)
     from .markdown_syntax import (Entry, embedded_scopes, extensions_of, fence_tokens,
                                   assign_tokens, render_syntax, is_covered,
                                   drop_specializations, covered_scopes)
 except (ImportError, ValueError, SystemError):
     from section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
     from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
-                         auto_theme, with_theme_directive)
+                         auto_theme, with_theme_directive, block_at)
     from markdown_syntax import (Entry, embedded_scopes, extensions_of, fence_tokens,
                                  assign_tokens, render_syntax, is_covered,
                                  drop_specializations, covered_scopes)
@@ -1013,7 +1013,8 @@ class MermaidManager:
                 self._start_render(b.source, key, opts)
                 continue
             view.fold(fold)
-            annotations.append('<a href="mmd:src:%s">Show source</a>' % key)
+            annotations.append('<a href="mmd:src:%s">Show source</a> &middot; '
+                               '<a href="mmd:open:%s">Open image</a>' % (key, key))
             phantoms.append(sublime.Phantom(
                 anchor, self._diagram_html(key, path, rendered_scale, opts),
                 sublime.LAYOUT_BLOCK, on_navigate=self._on_nav,
@@ -1124,6 +1125,9 @@ class MermaidManager:
 
     def _on_nav(self, href):
         action, _, key = href[len("mmd:"):].partition(":")
+        if action == "open":
+            self.open_image(key)
+            return
         if action == "src":
             self.as_source.add(key)
         elif action == "img":
@@ -1132,6 +1136,31 @@ class MermaidManager:
         elif action == "retry":
             self._failed.pop(key, None)
         self.render()
+
+    def open_image(self, key=None):
+        """Open a diagram's PNG in its own tab, for zooming or saving.
+
+        A phantom is capped to the width of the view; the image viewer is not, which
+        is the difference between glancing at a diagram and reading a dense one.
+        """
+        opts = _mermaid_opts(self.view)
+        if key is None:
+            block = block_at(self._blocks(), self.view.sel()[0].begin()) if self.view.sel() else None
+            if block is None:
+                sublime.status_message("MarkdownRich: no mermaid block at the cursor")
+                return
+            key = _mermaid_key(block.source, opts)
+        path, _ = _cached_render(key, opts)
+        if path is None:
+            sublime.status_message("MarkdownRich: that diagram hasn't rendered yet")
+            return
+        window = self.view.window()
+        if window is None:
+            return
+        _log("opening diagram image %s", path)
+        opened = window.open_file(path)
+        if _settings().get("open_link_side_by_side", True):
+            _reveal_beside(window, self.view, opened)
 
     def _park_caret_outside(self, key):
         """Move a caret sitting in this block's body up to its fence line.
@@ -1251,6 +1280,16 @@ class MarkdownRichRebuildSyntaxCommand(sublime_plugin.ApplicationCommand):
         sublime.status_message(
             "MarkdownRich: %s syntax with %d fenced language(s)"
             % ("rebuilt" if changed else "unchanged", count))
+
+
+class MarkdownRichOpenDiagramCommand(sublime_plugin.TextCommand):
+    """Open the rendered image of the diagram under the cursor in its own tab."""
+
+    def run(self, edit):
+        _mermaid(self.view).open_image()
+
+    def is_enabled(self):
+        return "Markdown" in (self.view.settings().get("syntax") or "")
 
 
 class MarkdownRichToggleDebugCommand(sublime_plugin.ApplicationCommand):
