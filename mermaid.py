@@ -183,6 +183,31 @@ def with_theme_directive(source, theme):
     return '%%{init: {"theme": "' + theme + '"}}%%\n' + source
 
 
+#: Width assumed when the view can't be measured (headless calls, tests).
+FALLBACK_VIEW_WIDTH = 800
+
+
+def width_budget(setting, view_width):
+    """How wide a diagram may be drawn, from the setting and the space available.
+
+    A fraction (``0 < setting <= 1``) is the useful default: the inline diagram is a
+    preview sized relative to the window, and the full-size render is one click away in
+    its own tab. Whole numbers are pixels, and ``0`` means the whole view. Nothing is
+    ever wider than the view, since a phantom that overflows is clipped, not scrollable.
+
+    :param setting: fraction of the view, pixel width, or 0 for the full view
+    :param view_width: usable width of the view in pixels
+    :returns: width budget in pixels
+    :rtype: int
+    """
+    available = int(view_width) if view_width and view_width > 0 else FALLBACK_VIEW_WIDTH
+    if not setting:
+        return available
+    if setting <= 1:
+        return int(available * setting)
+    return min(int(setting), available)
+
+
 def display_size(natural, scale, max_width, min_height=0):
     """Logical display size for a diagram rendered at ``scale`` device pixels.
 

@@ -12,7 +12,7 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
-                     luminance, auto_theme, with_theme_directive, block_at)
+                     luminance, auto_theme, with_theme_directive, block_at, width_budget)
 
 
 def _doc(*lines):
@@ -216,6 +216,30 @@ def test_display_size_leaves_tall_diagrams_alone():
 
 def test_display_size_minimum_height_off_by_default():
     assert display_size((1200, 300), scale=2, max_width=1000) == (600, 150)
+
+
+# --- width_budget: how much of the view a diagram may take -------------------
+
+def test_width_budget_fraction_of_the_view():
+    # the inline diagram is a preview; "Open image" is there for the full thing
+    assert width_budget(0.66, 1000) == 660
+
+
+def test_width_budget_zero_means_the_whole_view():
+    assert width_budget(0, 1000) == 1000
+
+
+def test_width_budget_absolute_pixels():
+    assert width_budget(800, 1000) == 800
+
+
+def test_width_budget_never_exceeds_the_view():
+    # a phantom wider than the view is clipped, not scrollable
+    assert width_budget(2000, 1000) == 1000
+
+
+def test_width_budget_without_a_usable_view():
+    assert width_budget(0.66, 0) == 528   # falls back to an 800px view
 
 
 # --- theme selection: match the diagram to the color scheme -----------------

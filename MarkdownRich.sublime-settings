@@ -89,9 +89,11 @@
     // is displayed at 1/scale of the rendered size, so this trades cache size for sharpness.
     "mermaid_scale": 2,
 
-    // Width cap for the displayed diagram (after undoing mermaid_scale).
-    // 0 = fit the width of the view, which is usually what you want for wide charts.
-    "mermaid_max_width": 0,
+    // How wide the inline diagram may be drawn (after undoing mermaid_scale).
+    // A fraction (0 < n <= 1) is relative to the view, whole numbers are pixels, and
+    // 0 fills the view. The default keeps the diagram a readable preview; "Open image"
+    // on the fence line shows the full render in its own tab for the dense ones.
+    "mermaid_max_width": 0.66,
 
     // Smallest height a diagram is drawn at. A left-to-right flowchart is wide and
     // shallow, so fitting its width alone can leave the labels unreadable; this grows

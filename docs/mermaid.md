@@ -51,7 +51,7 @@ Renders are cached under the OS temp dir (`remote_cache_dirname`), keyed by sour
 
 ## Sizing
 
-A diagram is drawn at the size it was rendered, divided by `mermaid_scale`, then fitted to the width available: by default the view's own width, or `mermaid_max_width` when you set one.
+A diagram is drawn at the size it was rendered, divided by `mermaid_scale`, then fitted to the width `mermaid_max_width` allows. It's a fraction of the view by default (`0.66`), which keeps the inline diagram a readable preview rather than something that dominates the document; whole numbers are pixels, and `0` fills the view. `Open image` on the fence line is the full-size view for anything dense enough to need it.
 
 That alone treats a left-to-right flowchart badly. It comes out wide and shallow, so fitting the width leaves it a couple of centimetres tall with labels too small to read. `mermaid_min_height` grows a short diagram back up until it reaches that height. The width still wins, since overflowing the view would only clip the diagram, and nothing is drawn larger than the pixels actually rendered, since past that it is blur rather than detail. A chart that is wide enough to fill the view on its own is therefore as tall as its shape allows: rewriting it as `flowchart TD` is the only way to make that text bigger.
 
@@ -70,7 +70,7 @@ Failures render as an inline annotation naming what was tried (`mermaid-cli: ...
 | `mermaid_theme`           | `"auto"`             | `"auto"` follows the color scheme; or `"default"`, `"dark"`, `"neutral"`, `"forest"`             |
 | `mermaid_background`      | `"auto"`             | `"auto"` uses the color scheme's background; or a color, or `"transparent"`                      |
 | `mermaid_scale`           | `2`                  | Device pixel ratio for local renders (2 = crisp on retina); the phantom displays at 1/scale      |
-| `mermaid_max_width`       | `0`                  | Width cap for the displayed diagram; `0` fits the width of the view                              |
+| `mermaid_max_width`       | `0.66`               | Inline width: a fraction of the view, pixels above 1, or `0` to fill it                          |
 | `mermaid_min_height`      | `200`                | Smallest height a diagram is drawn at, so wide charts stay legible; `0` disables                 |
 
 ## Implementation notes

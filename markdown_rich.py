@@ -21,14 +21,14 @@ import sublime_plugin
 try:
     from .section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
     from .mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
-                          auto_theme, with_theme_directive, block_at)
+                          auto_theme, with_theme_directive, block_at, width_budget)
     from .markdown_syntax import (Entry, embedded_scopes, extensions_of, fence_tokens,
                                   assign_tokens, render_syntax, is_covered,
                                   drop_specializations, covered_scopes)
 except (ImportError, ValueError, SystemError):
     from section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
     from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
-                         auto_theme, with_theme_directive, block_at)
+                         auto_theme, with_theme_directive, block_at, width_budget)
     from markdown_syntax import (Entry, embedded_scopes, extensions_of, fence_tokens,
                                  assign_tokens, render_syntax, is_covered,
                                  drop_specializations, covered_scopes)
@@ -443,17 +443,15 @@ def _mermaid_env():
 
 
 def _display_width(view):
-    """Width budget for a diagram: the configured cap, else the view's own width.
+    """Width budget for a diagram, from `mermaid_max_width` and the view's own width.
 
-    A fixed cap squeezes a wide left-to-right chart into a fraction of the window for
-    no reason, so 0 means "use whatever the view gives you".
+    The setting is a fraction of the view by default, so the inline diagram reads as a
+    preview and the full-size render stays one click away in its own tab.
     """
-    configured = _settings().get("mermaid_max_width", 0)
-    if configured:
-        return configured
-    if view is None:
-        return 800
-    return max(240, int(view.viewport_extent()[0]) - 80)
+    usable = 0
+    if view is not None:
+        usable = max(240, int(view.viewport_extent()[0]) - 80)
+    return width_budget(_settings().get("mermaid_max_width", 0.66), usable)
 
 
 def _mermaid_opts(view=None):
