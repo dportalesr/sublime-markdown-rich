@@ -24,7 +24,7 @@ No preview pane, no split window, no build step. The file you're editing is the 
 
 - **Mermaid blocks render as diagrams** in place of their source, so a document full of charts reads like documentation instead of code
 - **One link flips between diagram and source**, always in the same spot
-- **Open a diagram in its own tab** when it's too dense to read inline, full size, still on your editor's background
+- **Open a diagram in its own tab** when it's too dense to read inline, full size, still on your editor's background, updating as you edit the source
 - **Edit in place**: put the cursor in a block to get the source back, move away and the diagram returns
 - **Diagrams match your color scheme**, drawn on the editor's own background in a matching theme
 - **Rendered locally** when mermaid-cli is installed, so nothing you write leaves the machine
@@ -65,18 +65,18 @@ Open any Markdown file and it starts working. For highlighted code fences, pick 
 
 ## What you can do
 
-| Do this                     | Get this                                                 |
-|-----------------------------|----------------------------------------------------------|
-| open a Markdown file        | images render, `§`-references become links               |
-| `ctrl+enter` on a link      | opens it, beside the document or in your browser         |
-| triple-click a link         | the same, without touching the keyboard                  |
-| `ctrl+enter` on a `§3.1`    | jumps to that section                                    |
-| hover a `§3.1`              | shows which heading it points at, click to follow        |
-| click an image              | cycles its size                                          |
-| click a size label          | switches straight to that size                           |
-| click a diagram             | swaps it back to its mermaid source                      |
-| click `Open image`          | opens the diagram in its own tab, fit or full size       |
-| put the cursor in a diagram | reveals the source to edit; leaving restores the diagram |
+| Do this                     | Get this                                                      |
+|-----------------------------|---------------------------------------------------------------|
+| open a Markdown file        | images render, `§`-references become links                    |
+| `ctrl+enter` on a link      | opens it, beside the document or in your browser              |
+| triple-click a link         | the same, without touching the keyboard                       |
+| `ctrl+enter` on a `§3.1`    | jumps to that section                                         |
+| hover a `§3.1`              | shows which heading it points at, click to follow             |
+| click an image              | cycles its size                                               |
+| click a size label          | switches straight to that size                                |
+| click a diagram             | swaps it back to its mermaid source                           |
+| click `Open image`          | opens the diagram in its own tab, fit or full size            |
+| put the cursor in a diagram | reveals the source to edit; the diagram returns when you save |
 
 ## Commands
 

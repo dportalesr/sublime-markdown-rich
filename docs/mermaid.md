@@ -13,11 +13,15 @@ graph TD;
 
 The ` ```mermaid ` line stays visible as the fold handle, the rest of the block folds away, and the rendered PNG appears below it.
 
-Beside it sits `Open image`, which shows the diagram in its own tab with a `fit / actual size` toggle. Actual size is the size it was rendered at, twice the inline size at the default `mermaid_scale`, and the view scrolls to reach whatever doesn't fit on screen. The block switches to its source at the same time, since the diagram is now in a tab of its own: you end up reading the source and the rendered result side by side instead of two copies of the same picture. The tab is a scratch buffer holding one phantom rather than Sublime's image viewer, which draws a checkerboard behind transparent pixels; this way the diagram sits on the color scheme's background, exactly as it does inline.
+Beside it sits `Open image`, which shows the diagram in its own tab with a `fit / actual size` toggle. Actual size is the size it was rendered at, twice the inline size at the default `mermaid_scale`, and the view scrolls to reach whatever doesn't fit on screen. The block switches to its source at the same time, since the diagram is now in a tab of its own: you end up reading the source and the rendered result side by side instead of two copies of the same picture.
+
+Asking for the same diagram again focuses the tab that's already showing it rather than opening a second copy. The tab keeps following that block: edit the source, save, and the tab swaps to the new render on its own. While its tab is open the block stays on source, so you are editing text on one side and watching the diagram on the other. It follows the block's position in the document rather than a file, since an edited diagram hashes to a different cache entry entirely, and it holds the previous render until the new one exists rather than blanking while mermaid works. The tab is a scratch buffer holding one phantom rather than Sublime's image viewer, which draws a checkerboard behind transparent pixels; this way the diagram sits on the color scheme's background, exactly as it does inline.
 
 The state control is a single inline link at the end of that fence line, in the same spot in every state: it reads `Show source` while the diagram shows, `Show diagram` while the source shows, and carries the error plus a `retry` link when a render failed. Clicking the diagram itself is a shortcut for `Show source`. `MarkdownRich: Toggle mermaid diagrams` flips every block in the view at once.
 
 Putting the caret inside a block's body also reveals its source, since a folded region can't be typed into; moving the caret out (or clicking `Show diagram`, which parks the caret on the fence line for you) folds it back.
+
+Diagrams re-render **when you save**, not as you type. A render costs a subprocess or a network round trip, so spending one on every pause in a sentence you're still writing is waste. An edited block therefore keeps showing its source, with a `Show diagram` link if you want the render before saving.
 
 Tilde fences (`~~~mermaid`) and info-string attributes (` ```mermaid title="Flow" `) both work. A mermaid fence nested inside a longer outer fence (like the example above) is sample text, not a diagram, and an unterminated fence is ignored while you're still typing it.
 

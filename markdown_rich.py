@@ -1039,7 +1039,7 @@ def _full_diagram_html(view, path, fit):
             % (_data_src(path), dims, ' &middot; '.join(labels)))
 
 
-def _render_diagram_view(view, path, fit):
+def _render_diagram_view(view, path, fit, force=False):
     """(Re)draw the diagram phantom at the requested size.
 
     Safe to redraw now that the image is embedded rather than loaded: a `file://`
@@ -1047,7 +1047,8 @@ def _render_diagram_view(view, path, fit):
     glyph stretched to the full size of the tag.
     """
     settings = view.settings()
-    if settings.get("markdown_rich_diagram_fit") == fit and settings.get("markdown_rich_diagram_id"):
+    if not force and settings.get("markdown_rich_diagram_fit") == fit \
+            and settings.get("markdown_rich_diagram_id"):
         return
     previous = settings.get("markdown_rich_diagram_id")
     phantom_id = view.add_phantom(
@@ -1061,7 +1062,49 @@ def _render_diagram_view(view, path, fit):
     settings.set("markdown_rich_diagram_fit", fit)
 
 
-def _open_diagram_view(window, path):
+#: Open diagram tabs, by view id: which document and which block each one follows.
+_diagram_views = {}
+
+
+def _sync_diagram_views(origin, blocks, opts):
+    """Repoint open diagram tabs at the newest render of the block they follow.
+
+    A tab tracks a block's position in the document rather than a file, because
+    editing a diagram gives it a new content hash and so an entirely different cache
+    entry. Without this the tab would keep showing the render you opened it with.
+    """
+    for view_id, info in list(_diagram_views.items()):
+        view = sublime.View(view_id)
+        if not view.is_valid():
+            _diagram_views.pop(view_id, None)
+            continue
+        if info["origin"] != origin.id() or info["ordinal"] >= len(blocks):
+            continue
+        key = _mermaid_key(blocks[info["ordinal"]].source, opts)
+        path, _ = _cached_render(key, opts)
+        if path and path != info["path"]:
+            # Only once the new render exists: until then the old one is better than
+            # an empty tab.
+            info["path"] = path
+            _log("diagram tab follows an edit -> %s", os.path.basename(path))
+            _render_diagram_view(view, path,
+                                 view.settings().get("markdown_rich_diagram_fit", True),
+                                 force=True)
+
+
+def _find_diagram_view(origin, ordinal):
+    """An open tab already following this block, or None."""
+    for view_id, info in list(_diagram_views.items()):
+        if info["origin"] != origin.id() or info["ordinal"] != ordinal:
+            continue
+        view = sublime.View(view_id)
+        if view.is_valid():
+            return view
+        _diagram_views.pop(view_id, None)
+    return None
+
+
+def _open_diagram_view(window, path, origin, ordinal):
     """A scratch tab showing one diagram, on the editor's own background."""
     view = window.new_file()
     view.set_scratch(True)
@@ -1078,6 +1121,7 @@ def _open_diagram_view(window, path):
     natural = _image_size(path) or (0, 0)
     em = getattr(view, "em_width", lambda: 8.0)() or 8.0
     view.run_command("markdown_rich_pad_view", {"columns": int(natural[0] / em) + 2})
+    _diagram_views[view.id()] = {"origin": origin.id(), "ordinal": ordinal, "path": path}
     # The view has no size until Sublime lays it out, so "fit" has to wait for it.
     sublime.set_timeout(lambda: _render_diagram_view(view, path, fit=True), 50)
     return view
@@ -1143,14 +1187,18 @@ class MermaidManager:
         blocks = self._blocks()
         self._caret_keys = self._keys_at_caret(blocks, opts)
         phantoms, regions, annotations = [], [], []
-        for b in blocks:
+        for ordinal, b in enumerate(blocks):
             key = _mermaid_key(b.source, opts)
             fold = sublime.Region(b.body_start, b.end)
             anchor = sublime.Region(b.start)
             # Every state annotates the same spot, the end of the fence line, so the
             # control never moves: only its label changes with the state.
             regions.append(anchor)
-            if key in self.as_source or key in self._caret_keys:
+            # A block with its own tab open stays on source: the diagram is already
+            # on screen beside it. Tracked by position, not by cache key, so it
+            # survives edits, which give the block an entirely new key.
+            followed = _find_diagram_view(view, ordinal) is not None
+            if followed or key in self.as_source or key in self._caret_keys:
                 view.unfold(fold)
                 annotations.append('<a href="mmd:img:%s">Show diagram</a>' % key)
                 continue
@@ -1188,6 +1236,7 @@ class MermaidManager:
             )
         else:
             view.erase_regions(MERMAID_STATUS_KEY)
+        _sync_diagram_views(view, blocks, opts)
 
     def _log_block(self, block, key, path):
         """Report a block's cache identity once, so an edit that didn't take is visible.
@@ -1291,6 +1340,13 @@ class MermaidManager:
             self._failed.pop(key, None)
         self.render()
 
+    def _ordinal_of(self, key, opts):
+        """Position of the block with this cache key, or None."""
+        for i, block in enumerate(self._blocks()):
+            if _mermaid_key(block.source, opts) == key:
+                return i
+        return None
+
     def open_image(self, key=None):
         """Show a diagram full size in its own tab.
 
@@ -1318,7 +1374,23 @@ class MermaidManager:
         # its source: the two end up side by side rather than duplicating each other.
         self.as_source.add(key)
         self.render()
-        opened = _open_diagram_view(window, path)
+        ordinal = self._ordinal_of(key, opts)
+        if ordinal is None:
+            return
+        existing = _find_diagram_view(self.view, ordinal)
+        if existing is not None:
+            # Asking twice for the same diagram means "show me that", not "give me
+            # another copy of it".
+            _log("diagram %s already open, focusing its tab", key[:12])
+            info = _diagram_views[existing.id()]
+            if info["path"] != path:
+                info["path"] = path
+                _render_diagram_view(existing, path,
+                                     existing.settings().get("markdown_rich_diagram_fit", True),
+                                     force=True)
+            existing.window().focus_view(existing)
+            return
+        opened = _open_diagram_view(window, path, self.view, ordinal)
         if _settings().get("open_link_side_by_side", True):
             _reveal_beside(window, self.view, opened)
 
@@ -1450,6 +1522,13 @@ class MarkdownRichOpenDiagramCommand(sublime_plugin.TextCommand):
 
     def is_enabled(self):
         return "Markdown" in (self.view.settings().get("syntax") or "")
+
+
+class MarkdownRichDiagramTabs(sublime_plugin.EventListener):
+    """Forgets diagram tabs as they close, so they stop being followed."""
+
+    def on_close(self, view):
+        _diagram_views.pop(view.id(), None)
 
 
 class MarkdownRichPadViewCommand(sublime_plugin.TextCommand):
