@@ -11,5 +11,18 @@
         "operand": "text.html.markdown meta.link, text.html.markdown markup.underline.link"
       }
     ]
+  },
+  // Jump to a §-section reference. §-refs carry no real scope (they're plugin-styled,
+  // not syntax), so this gates on on_query_context instead of a selector.
+  {
+    "keys": ["ctrl+enter"],
+    "command": "markdown_rich_open_link",
+    "context": [
+      {
+        "key": "markdown_rich_section_ref",
+        "operator": "equal",
+        "operand": true
+      }
+    ]
   }
 ]

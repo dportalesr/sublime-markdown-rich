@@ -12,10 +12,25 @@ import webbrowser
 import sublime
 import sublime_plugin
 
+# Pure section-reference logic lives in a sibling module with no `sublime` import so
+# it stays unit-testable. Relative import inside the package, plain import as fallback.
+try:
+    from .section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
+except (ImportError, ValueError, SystemError):
+    from section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
+
 SETTINGS_FILE = "MarkdownRich.sublime-settings"
 MARKDOWN_SELECTOR = "text.html.markdown"
 PHANTOM_KEY = "markdown_rich_images"
 STATUS_KEY = "markdown_rich_status"
+SECTION_KEY = "markdown_rich_section_refs"
+# Sublime has no syntax injection, so §-refs are link-styled by the plugin via
+# add_regions rather than a scope. find_all wants a pattern string; reuse the pure
+# module's regex (its capture group doesn't narrow the match extent) so the finder
+# and the parser can't drift apart.
+SECTION_REF_FIND_RE = SECTION_REF_RE.pattern
+# Context key the ctrl+enter keymap queries (on_query_context) to fire on a §-ref.
+SECTION_CONTEXT_KEY = "markdown_rich_section_ref"
 
 # Inline image: ![alt](src ["title"]) — used both for find_all (ST regex) and parsing.
 IMAGE_FIND_RE = r'!\[[^\]]*\]\([^)]+\)'
@@ -151,6 +166,52 @@ def _target_at(view, point):
             url = m.group(0).rstrip(_URL_TRAILING)
             return (_has_image_ext(url), url)
     return None
+
+
+# --- section references (§3 -> numbered heading) -----------------------------
+
+def _section_ref_at(view, point):
+    """Return the section number of the `§N` reference under `point`, or None."""
+    line = view.line(point)
+    return _section_ref_number(view.substr(line), point - line.begin())
+
+
+def _heading_line_regions(view):
+    """Full-line regions of every heading, in document order (one per line).
+
+    Driven by the `markup.heading` scope rather than a text scan, so `##`-looking
+    lines inside fenced code blocks aren't mistaken for headings. Each scoped region
+    is expanded to its full line so `heading_number` sees the `#` markers.
+    """
+    lines, seen = [], set()
+    for region in view.find_by_selector("markup.heading"):
+        line = view.line(region.begin())
+        if line.begin() not in seen:
+            seen.add(line.begin())
+            lines.append(line)
+    lines.sort(key=lambda r: r.begin())
+    return lines
+
+
+def _section_target(view, label):
+    """Region of the first heading numbered `label` (e.g. "3.1"), or None."""
+    lines = _heading_line_regions(view)
+    idx = first_matching_index(label, [view.substr(r) for r in lines])
+    return lines[idx] if idx is not None else None
+
+
+# Link-color foreground + underline, no fill/outline (the underline flags require both
+# NO_FILL and NO_OUTLINE). Makes §-refs read as links without owning the syntax.
+_SECTION_DRAW = sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE | sublime.DRAW_SOLID_UNDERLINE
+
+
+def _style_section_refs(view):
+    """Paint every `§N` ref (outside code) with the color scheme's link style."""
+    regions = [
+        r for r in view.find_all(SECTION_REF_FIND_RE)
+        if not view.match_selector(r.begin(), "markup.raw")
+    ]
+    view.add_regions(SECTION_KEY, regions, "markup.underline.link", flags=_SECTION_DRAW)
 
 
 # --- image dimension probing (no PIL dependency) ----------------------------
@@ -505,19 +566,50 @@ class MarkdownRichImages(sublime_plugin.ViewEventListener):
         return "Markdown" in (settings.get("syntax") or "")
 
     def on_load_async(self):
+        _style_section_refs(self.view)
         if _settings().get("auto_show_on_load", True):
             _manager(self.view).show()
 
     def on_activated_async(self):
         # Covers buffers already open when the plugin loaded, and tab focus.
+        _style_section_refs(self.view)
         m = _manager(self.view)
         if not m.visible and _settings().get("auto_show_on_load", True):
             m.show()
 
+    def on_modified_async(self):
+        # Section-ref styling tracks edits live (like real link highlighting would).
+        # Debounced so a burst of keystrokes only restyles once things settle.
+        self._section_token = getattr(self, "_section_token", 0) + 1
+        token = self._section_token
+
+        def restyle():
+            if token == self._section_token:
+                _style_section_refs(self.view)
+
+        sublime.set_timeout(restyle, 120)
+
     def on_post_save_async(self):
+        _style_section_refs(self.view)
         m = _manager(self.view)
         if m.visible:
             m.render()
+
+    def on_query_context(self, key, operator, operand, match_all):
+        """Answer the ctrl+enter keymap: is the caret on a §-ref? (markdown only)."""
+        if key != SECTION_CONTEXT_KEY:
+            return None
+        view = self.view
+        on_ref = (
+            len(view.sel()) > 0
+            and view.match_selector(view.sel()[0].begin(), MARKDOWN_SELECTOR)
+            and _section_ref_at(view, view.sel()[0].begin()) is not None
+        )
+        if operator == sublime.OP_EQUAL:
+            return on_ref == bool(operand)
+        if operator == sublime.OP_NOT_EQUAL:
+            return on_ref != bool(operand)
+        return None
 
     def on_close(self):
         _managers.pop(self.view.id(), None)
@@ -554,9 +646,14 @@ class MarkdownRichOpenLinkCommand(sublime_plugin.TextCommand):
         if not view.match_selector(point, MARKDOWN_SELECTOR):
             return
         target = _target_at(view, point)
-        if not target:
+        if target:
+            self._open_target(view, target[1], side_by_side)
             return
-        url = target[1]
+        label = _section_ref_at(view, point)
+        if label is not None:
+            self._jump_to_section(view, label)
+
+    def _open_target(self, view, url, side_by_side):
         if re.match(r'^(https?|ftp|mailto):', url, re.I):
             webbrowser.open(url)
             return
@@ -568,6 +665,16 @@ class MarkdownRichOpenLinkCommand(sublime_plugin.TextCommand):
         if side_by_side is None:
             side_by_side = _settings().get("open_link_side_by_side", True)
         self._open(path, line, col, side_by_side)
+
+    def _jump_to_section(self, view, label):
+        """Move the caret to the numbered heading a `§N` reference points at."""
+        region = _section_target(view, label)
+        if region is None:
+            sublime.status_message("MarkdownRich: no section " + label)
+            return
+        view.sel().clear()
+        view.sel().add(sublime.Region(region.begin()))
+        view.show_at_center(region)
 
     def _open(self, path, line, col, side_by_side):
         window = self.view.window()

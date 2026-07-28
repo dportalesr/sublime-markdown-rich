@@ -14,6 +14,7 @@ MarkdownRich auto-renders `![](...)` and raw HTML `<img>` tags as phantoms next 
 - **Private GitHub images** — optional bearer-token auth for `github.com` and `*.githubusercontent.com`; token dropped on cross-host redirect (signed S3)
 - **Open links from the keyboard or mouse** — caret on a link + `ctrl+enter`, or triple-click; local files open in Sublime, URLs in the browser; word-select on plain text is preserved
 - **Jump to line/column** — a `[label](path:line)` or `path:line:col` suffix opens the file at that position (`ENCODED_POSITION`)
+- **Section references** — `§3` / `§3.1` render like links and `ctrl+enter` jumps to the numbered heading (`## 3.` / `### 3.1`) in the same document
 - **Side-by-side by default** — the opened file is placed in the Markdown's own group and both sheets are selected, so Sublime tiles them side-by-side without touching your window layout; toggle with `open_link_side_by_side`
 - **Status annotations** — loading / not-found / fetch-failed states render as inline annotations (with retry link), not phantoms
 
@@ -100,12 +101,22 @@ Then in `Packages/User/MarkdownRich.sublime-settings`:
 
 A fine-grained token with `Contents: read` on the relevant repos is enough.
 
+## Section references
+
+Write `§3` (or `§ 3`, `§3.1`, `§3.2.1`) anywhere in prose to point at a numbered
+heading. The plugin paints each reference in the color scheme's link style, and
+`ctrl+enter` on it jumps to the heading. Resolution is an exact match on the heading's
+**leading number**, so `§3` lands on `## 3. Usage` and `§3.1` on `### 3.1 Basics`.
+Only ATX headings (`#`-prefixed) are matched; references inside code spans/fences are
+left as plain text. No match just flashes a status message.
+
 ## How it works
 
 - A per-view `PhantomManager` finds image regions with `view.find_all(...)`, resolves each source path/URL, and renders one `sublime.Phantom` per resolved image at the end of the source line.
 - Non-image states (loading, missing, fetch-failed) render as `add_regions(annotations=...)` so they don't push layout around like a block phantom would.
 - Remote fetches run on a background `threading.Thread` and call `sublime.set_timeout(..., 0)` to re-enter the main thread for re-render.
 - Image dimensions are probed by reading the file header (no PIL/Pillow dependency) — PNG `IHDR`, GIF logical screen descriptor, JPEG `SOFn` markers.
+- Section references can't be scoped by syntax (Sublime has no injection into a grammar it doesn't own), so the plugin styles them with `add_regions(..., "markup.underline.link", ...)` and answers an `on_query_context` key (`markdown_rich_section_ref`) that gates the `ctrl+enter` keymap. The jump is resolved in `section_ref.py` (pure, unit-tested) against `markup.heading` regions.
 
 ## License
 
