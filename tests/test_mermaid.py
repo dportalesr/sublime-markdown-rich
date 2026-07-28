@@ -165,6 +165,32 @@ def test_display_size_unknown_natural():
     assert display_size(None, scale=2, max_width=800) == (None, None)
 
 
+# --- display_size: a floor, so wide-and-short diagrams stay legible ---------
+
+def test_display_size_grows_a_short_diagram_to_the_minimum_height():
+    # an LR flowchart is wide and shallow: shrinking it to the width budget leaves
+    # text too small to read, so scale it back up until it reaches the floor
+    assert display_size((1200, 300), scale=2, max_width=1000, min_height=200) == (800, 200)
+
+
+def test_display_size_minimum_height_yields_to_the_width_budget():
+    # growing to the floor must never push the diagram past the width it has
+    assert display_size((1200, 300), scale=2, max_width=700, min_height=400) == (700, 175)
+
+
+def test_display_size_never_upscales_past_the_rendered_pixels():
+    # beyond the pixels actually rendered it is just blur
+    assert display_size((400, 100), scale=2, max_width=2000, min_height=400) == (400, 100)
+
+
+def test_display_size_leaves_tall_diagrams_alone():
+    assert display_size((400, 1200), scale=2, max_width=800, min_height=200) == (200, 600)
+
+
+def test_display_size_minimum_height_off_by_default():
+    assert display_size((1200, 300), scale=2, max_width=1000) == (600, 150)
+
+
 # --- theme selection: match the diagram to the color scheme -----------------
 
 def test_luminance_extremes():

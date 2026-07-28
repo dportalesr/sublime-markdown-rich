@@ -84,7 +84,14 @@
     "mermaid_scale": 2,
 
     // Width cap for the displayed diagram (after undoing mermaid_scale).
-    "mermaid_max_width": 800,
+    // 0 = fit the width of the view, which is usually what you want for wide charts.
+    "mermaid_max_width": 0,
+
+    // Smallest height a diagram is drawn at. A left-to-right flowchart is wide and
+    // shallow, so fitting its width alone can leave the labels unreadable; this grows
+    // it back until it is this tall, without exceeding the width or the rendered
+    // resolution. Set to 0 to let diagrams be as short as they come out.
+    "mermaid_min_height": 200,
 
     // Open file links (ctrl+enter / triple-click) beside the origin Markdown: the
     // opened file is placed in the same group and both sheets are selected, so

@@ -166,23 +166,36 @@ def with_theme_directive(source, theme):
     return '%%{init: {"theme": "' + theme + '"}}%%\n' + source
 
 
-def display_size(natural, scale, max_width):
+def display_size(natural, scale, max_width, min_height=0):
     """Logical display size for a diagram rendered at ``scale`` device pixels.
 
     The render is deliberately oversampled (2x by default) so the phantom looks crisp;
-    dividing by the same factor gives the size it should actually occupy. The result is
-    then capped to ``max_width``, keeping the aspect ratio, and is never upscaled.
+    dividing by the same factor gives the size it should occupy, capped to ``max_width``.
+
+    ``min_height`` then pulls short diagrams back up. A left-to-right flowchart is wide
+    and shallow, so fitting its width can leave it a couple of centimetres tall with
+    unreadable labels; growing it to the floor trades vertical space for legibility.
+    Two limits hold: the width budget still wins, and nothing is ever drawn larger than
+    the pixels actually rendered, since past that it is only blur.
 
     :param natural: ``(width, height)`` of the rendered PNG, or None when unknown
     :param scale: device pixel ratio used for the render
     :param max_width: pixel cap for the displayed width
+    :param min_height: pixel floor for the displayed height, 0 to disable
     :returns: ``(width, height)``, or ``(None, None)`` when ``natural`` is unknown
     :rtype: tuple
     """
     if not natural:
         return (None, None)
-    w, h = natural
+    nat_w, nat_h = natural
+    if not nat_w or not nat_h:
+        return (None, None)
     factor = float(scale) if scale else 1.0
-    w, h = w / factor, h / factor
-    ratio = min(max_width / w, 1.0) if w else 1.0
-    return (int(w * ratio), int(h * ratio))
+    w, h = nat_w / factor, nat_h / factor
+
+    if max_width and w > max_width:
+        w, h = max_width, h * (max_width / w)
+    if min_height and h < min_height:
+        grow = min(min_height / h, (max_width / w) if max_width else float("inf"), nat_h / h)
+        w, h = w * grow, h * grow
+    return (int(w), int(h))

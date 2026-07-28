@@ -426,6 +426,20 @@ def _mermaid_env():
     return env
 
 
+def _display_width(view):
+    """Width budget for a diagram: the configured cap, else the view's own width.
+
+    A fixed cap squeezes a wide left-to-right chart into a fraction of the window for
+    no reason, so 0 means "use whatever the view gives you".
+    """
+    configured = _settings().get("mermaid_max_width", 0)
+    if configured:
+        return configured
+    if view is None:
+        return 800
+    return max(240, int(view.viewport_extent()[0]) - 80)
+
+
 def _mermaid_opts(view=None):
     """Render options that also key the cache: theme, background, scale, display cap.
 
@@ -447,7 +461,8 @@ def _mermaid_opts(view=None):
         "theme": theme,
         "background": background,
         "scale": s.get("mermaid_scale", 2),
-        "max_width": s.get("mermaid_max_width", 800),
+        "max_width": _display_width(view),
+        "min_height": s.get("mermaid_min_height", 200),
     }
 
 
@@ -1033,7 +1048,8 @@ class MermaidManager:
     def _diagram_html(self, key, path, rendered_scale, opts):
         """The diagram alone. The state control lives in the fence-line annotation, so
         the phantom carries no footer; clicking the image is just a shortcut for it."""
-        w, h = display_size(_image_size(path), rendered_scale, opts["max_width"])
+        w, h = display_size(_image_size(path), rendered_scale,
+                            opts["max_width"], opts["min_height"])
         dims = (' width="%d"' % w if w else "") + (' height="%d"' % h if h else "")
         body = (
             '<div class="mr-c">'
