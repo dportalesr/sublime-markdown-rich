@@ -5,6 +5,7 @@
     {"caption": "MarkdownRich: Cycle all image sizes", "command": "markdown_rich_cycle_all_images"},
     {"caption": "MarkdownRich: Toggle mermaid diagrams", "command": "markdown_rich_toggle_mermaid"},
     {"caption": "MarkdownRich: Clear Cache", "command": "markdown_rich_clear_cache"},
+    {"caption": "MarkdownRich: Rebuild Markdown syntax", "command": "markdown_rich_rebuild_syntax"},
     {
         "caption": "MarkdownRich: Settings",
         "command": "edit_settings",

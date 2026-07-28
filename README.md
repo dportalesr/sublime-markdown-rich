@@ -37,6 +37,10 @@ Everything works on the buffer as-is. No preview pane, no build step, no Package
 - **Hover to preview**: hovering a reference shows the heading it points at (`3.1 Basics`, line 42) as a clickable link
 - **Live styling**: references restyle as you type (debounced), on load, on tab focus, and on save
 
+**Syntax**
+
+- **Fenced code for every installed language**: Sublime's Markdown syntax embeds a fixed list of languages, so a fence tagged with anything else stays unhighlighted. MarkdownRich generates a `MarkdownRich` syntax that inherits Markdown and adds the missing ones, taken from whatever syntaxes you have installed
+
 ## Requirements
 
 - **Sublime Text 4** (side-by-side reveal uses `select_sheets`, build 4050+; older builds open a plain tab instead)
@@ -82,7 +86,26 @@ The `markdown_rich_open_link` command takes a `side_by_side` arg (`true`/`false`
 | `MarkdownRich: Cycle all image sizes`   | Advance every phantom one step in its size cycle                     |
 | `MarkdownRich: Toggle mermaid diagrams` | Flip every mermaid block in the view between diagram and source      |
 | `MarkdownRich: Clear Cache`             | Delete cached downloads/renders and rebuild every open Markdown view |
+| `MarkdownRich: Rebuild Markdown syntax` | Regenerate the MarkdownRich syntax from the installed syntaxes       |
 | `MarkdownRich: Settings`                | Open user settings side-by-side with defaults                        |
+
+## Fenced code highlighting
+
+Sublime's built-in Markdown syntax embeds a fixed list of languages, one hand-written rule each, and there is no lookup of a fence's info string against installed syntaxes. A fence tagged `mermaid`, `d2`, `nix` or anything else outside that list stays plain `markup.raw`, and installing a syntax for the language changes nothing.
+
+MarkdownRich generates a syntax that fixes this without hardcoding a second list:
+
+- it `extends` the built-in Markdown, so every rule the parent has keeps working
+- it enumerates the syntaxes you actually have installed, skips the ones the parent already embeds, and emits one fence rule per language that's left
+- the generated rules mirror the parent's own (same variables, capture numbering and `embed_scope` shape), so code folding, the infostring scope and the language-name scope behave as they do for built-in languages
+
+Install a new language package and the next reload picks it up; `MarkdownRich: Rebuild Markdown syntax` does it on demand. The file is written to `Packages/User/MarkdownRich.sublime-syntax` and only rewritten when its contents change, so a steady setup never sees a syntax reload.
+
+Info strings come from each syntax's scope tail, its name when that reads like an info string, and its declared file extensions, so ```` ```mermaid ```` and ```` ```mmd ```` both work. A token is owned by one language: whoever claims it first keeps it, and sub-syntaxes (`source.mermaid.flowchart`) and helper fragments (`source.css.mermaid`) are skipped, since they'd otherwise claim `flowchart` or `mermaid` for something that isn't the language.
+
+**To use it**, pick `MarkdownRich` from the syntax menu, or make it the default for Markdown files with *View → Syntax → Open all with current extension as…*. Set `generate_markdown_syntax` to `false` to turn generation off.
+
+It inherits plain Markdown by default. `markdown_syntax_parent` points it somewhere else, e.g. `Packages/Markdown/MultiMarkdown.sublime-syntax` to keep MultiMarkdown's metadata block on top of the fenced languages. Coverage is read along the whole `extends` chain, so inheriting a syntax that itself inherits Markdown doesn't duplicate the 44 languages Markdown already embeds.
 
 ## Path resolution
 
@@ -127,22 +150,24 @@ Styling skips references inside code spans and fences (`markup.raw`), which stay
 
 Defaults live in `MarkdownRich.sublime-settings`; override them in `Packages/User/MarkdownRich.sublime-settings` (or via `MarkdownRich: Settings`). Mermaid's own settings are documented in [docs/mermaid.md](docs/mermaid.md#settings).
 
-| Key                      | Default                                              | Description                                                                                                                                                        |
-|--------------------------|------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `auto_show_on_load`      | `true`                                               | Render phantoms automatically when a Markdown view loads or activates                                                                                              |
-| `default_size`           | `"thumbnail"`                                        | Initial size for new phantoms: `"thumbnail"`, `"medium"`, or `"original"`                                                                                          |
-| `render_remote`          | `true`                                               | Fetch and render remote http(s) images                                                                                                                             |
-| `thumbnail_width`        | `180`                                                | Pixel cap for the thumbnail state (square cap, longest side)                                                                                                       |
-| `max_image_width`        | `800`                                                | Width cap for the medium state                                                                                                                                     |
-| `max_image_height`       | `600`                                                | Height cap for the medium state                                                                                                                                    |
-| `medium_merge_threshold` | `0.1`                                                | Drop medium from the toggle when its width is within this fraction of the original (set to `0` to always keep all three)                                           |
-| `image_extensions`       | `[".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"]` | File extensions treated as images (SVG excluded: minihtml can't render it)                                                                                         |
-| `remote_cache_dirname`   | `"SublimeMarkdownRich"`                              | Sub-folder name under the OS temp dir for cached downloads                                                                                                         |
-| `github_token`           | `""`                                                 | Optional bearer token for private-repo images (see below)                                                                                                          |
-| `github_token_file`      | `""`                                                 | Path to a file containing the token; preferred over `github_token`                                                                                                 |
-| `status_color`           | `"#c0863a"`                                          | Accent color for inline status annotations (loading / missing / error)                                                                                             |
-| `section_ref_popup`      | `true`                                               | Hovering a §-reference previews its target heading as a clickable link                                                                                             |
-| `open_link_side_by_side` | `true`                                               | Open file links beside the origin Markdown by selecting both sheets in the same group (Sublime tiles them; window layout unchanged); local files only, not http(s) |
+| Key                        | Default                                              | Description                                                                                                                                                        |
+|----------------------------|------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `auto_show_on_load`        | `true`                                               | Render phantoms automatically when a Markdown view loads or activates                                                                                              |
+| `default_size`             | `"thumbnail"`                                        | Initial size for new phantoms: `"thumbnail"`, `"medium"`, or `"original"`                                                                                          |
+| `render_remote`            | `true`                                               | Fetch and render remote http(s) images                                                                                                                             |
+| `thumbnail_width`          | `180`                                                | Pixel cap for the thumbnail state (square cap, longest side)                                                                                                       |
+| `max_image_width`          | `800`                                                | Width cap for the medium state                                                                                                                                     |
+| `max_image_height`         | `600`                                                | Height cap for the medium state                                                                                                                                    |
+| `medium_merge_threshold`   | `0.1`                                                | Drop medium from the toggle when its width is within this fraction of the original (set to `0` to always keep all three)                                           |
+| `image_extensions`         | `[".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"]` | File extensions treated as images (SVG excluded: minihtml can't render it)                                                                                         |
+| `remote_cache_dirname`     | `"SublimeMarkdownRich"`                              | Sub-folder name under the OS temp dir for cached downloads                                                                                                         |
+| `github_token`             | `""`                                                 | Optional bearer token for private-repo images (see below)                                                                                                          |
+| `github_token_file`        | `""`                                                 | Path to a file containing the token; preferred over `github_token`                                                                                                 |
+| `status_color`             | `"#c0863a"`                                          | Accent color for inline status annotations (loading / missing / error)                                                                                             |
+| `section_ref_popup`        | `true`                                               | Hovering a §-reference previews its target heading as a clickable link                                                                                             |
+| `generate_markdown_syntax` | `true`                                               | Generate a `MarkdownRich` Markdown syntax that highlights fenced code for every installed language                                                                 |
+| `markdown_syntax_parent`   | `"Packages/Markdown/Markdown.sublime-syntax"`        | Syntax the generated one inherits from; point it at MultiMarkdown to keep its metadata block                                                                       |
+| `open_link_side_by_side`   | `true`                                               | Open file links beside the origin Markdown by selecting both sheets in the same group (Sublime tiles them; window layout unchanged); local files only, not http(s) |
 
 ## Private GitHub images
 
@@ -184,6 +209,7 @@ Logic that doesn't need a running editor lives in sibling modules that import no
 ```bash
 python3 tests/test_section_ref.py   # built-in runner, no dependencies
 python3 tests/test_mermaid.py
+python3 tests/test_markdown_syntax.py
 pytest tests/                       # or the whole suite via pytest
 ```
 

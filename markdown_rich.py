@@ -21,10 +21,16 @@ try:
     from .section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
     from .mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
                           auto_theme, with_theme_directive)
+    from .markdown_syntax import (Entry, embedded_scopes, extensions_of, fence_tokens,
+                                  assign_tokens, render_syntax, is_covered,
+                                  drop_specializations, covered_scopes)
 except (ImportError, ValueError, SystemError):
     from section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
     from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
                          auto_theme, with_theme_directive)
+    from markdown_syntax import (Entry, embedded_scopes, extensions_of, fence_tokens,
+                                 assign_tokens, render_syntax, is_covered,
+                                 drop_specializations, covered_scopes)
 
 SETTINGS_FILE = "MarkdownRich.sublime-settings"
 MARKDOWN_SELECTOR = "text.html.markdown"
@@ -578,6 +584,75 @@ def _render_mermaid(source, key, opts):
     raise RuntimeError("; ".join(problems))
 
 
+# --- generated Markdown syntax (fenced code for every installed language) -----
+
+DEFAULT_PARENT_SYNTAX = "Packages/Markdown/Markdown.sublime-syntax"
+GENERATED_SYNTAX_NAME = "MarkdownRich"
+# Extends the parent scope rather than reusing it, the way MultiMarkdown does, so
+# `text.html.markdown` selectors keep matching while the two stay distinguishable.
+GENERATED_SYNTAX_SCOPE = "text.html.markdown.rich"
+# Written to User/ rather than the package: it is generated output, and keeping it
+# out of the package leaves this repo clean.
+GENERATED_SYNTAX_FILE = "MarkdownRich.sublime-syntax"
+# Markdown embedded in Markdown, and plain-text-ish syntaxes, are not worth a fence.
+_SYNTAX_SCOPE_SKIP = ("text.html.markdown", "text.plain")
+
+
+def _parent_syntax():
+    """Syntax to inherit from. Point it at MultiMarkdown to keep its metadata block."""
+    return _settings().get("markdown_syntax_parent", DEFAULT_PARENT_SYNTAX)
+
+
+def _generated_syntax_path():
+    return os.path.join(sublime.packages_path(), "User", GENERATED_SYNTAX_FILE)
+
+
+def _syntax_entries():
+    """Languages the parent Markdown syntax doesn't already highlight in fences.
+
+    Only the uncovered syntaxes have their resource read (for file extensions, which
+    are the aliases people actually type), so the common case costs one resource load
+    for the parent plus a handful for the stragglers.
+    """
+    parent = _parent_syntax()
+    covered = covered_scopes(sublime.load_resource, parent)
+    entries, seen = [], set()
+    for syntax in sublime.list_syntaxes():
+        scope = (syntax.scope or "").split()[0] if syntax.scope else ""
+        if not scope or syntax.hidden or scope in seen:
+            continue
+        if scope.startswith(_SYNTAX_SCOPE_SKIP) or is_covered(scope, covered):
+            continue
+        seen.add(scope)
+        try:
+            extensions = extensions_of(sublime.load_resource(syntax.path))
+        except Exception:
+            extensions = []
+        tokens = fence_tokens(syntax.name, scope, extensions)
+        if tokens:
+            entries.append(Entry(name=syntax.name, scope=scope, tokens=tokens))
+    entries = drop_specializations(entries)
+    entries.sort(key=lambda e: e.tokens[0])
+    return assign_tokens(entries)
+
+
+def _write_markdown_syntax():
+    """Regenerate the MarkdownRich syntax. Returns (path, language_count, changed)."""
+    entries = _syntax_entries()
+    text = render_syntax(entries, _parent_syntax(), GENERATED_SYNTAX_NAME, GENERATED_SYNTAX_SCOPE)
+    path = _generated_syntax_path()
+    try:
+        with open(path, encoding="utf-8") as f:
+            unchanged = f.read() == text
+    except OSError:
+        unchanged = False
+    if not unchanged:
+        # Rewriting makes Sublime reload the syntax, so only touch it on a real change.
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    return path, len(entries), not unchanged
+
+
 # --- per-view phantom manager ------------------------------------------------
 
 _managers = {}
@@ -1084,6 +1159,20 @@ class MarkdownRichToggleMermaidCommand(sublime_plugin.TextCommand):
         _mermaid(self.view).toggle_all()
 
 
+class MarkdownRichRebuildSyntaxCommand(sublime_plugin.ApplicationCommand):
+    """Regenerate the MarkdownRich syntax from the currently installed syntaxes."""
+
+    def run(self):
+        try:
+            _, count, changed = _write_markdown_syntax()
+        except Exception as e:
+            sublime.error_message("MarkdownRich: could not write the syntax\n\n%s" % e)
+            return
+        sublime.status_message(
+            "MarkdownRich: %s syntax with %d fenced language(s)"
+            % ("rebuilt" if changed else "unchanged", count))
+
+
 class MarkdownRichClearCacheCommand(sublime_plugin.TextCommand):
     """Drop cached downloads/renders and rebuild every open Markdown view.
 
@@ -1182,6 +1271,25 @@ class MarkdownRichOpenLinkCommand(sublime_plugin.TextCommand):
 def plugin_loaded():
     """Style refs + render images in already-open Markdown buffers (plugin reload / session restore)."""
     sublime.set_timeout_async(_show_open_markdown_views, 100)
+    sublime.set_timeout_async(_refresh_markdown_syntax, 500)
+
+
+def _refresh_markdown_syntax():
+    """Keep the generated syntax in step with the installed syntaxes.
+
+    Runs on every load because packages come and go between sessions; the file is only
+    written when its contents actually differ, so a steady setup stays untouched.
+    """
+    if not _settings().get("generate_markdown_syntax", True):
+        return
+    try:
+        _, count, changed = _write_markdown_syntax()
+    except Exception as e:
+        print("MarkdownRich: syntax generation failed: %s" % e)
+        return
+    if changed:
+        print("MarkdownRich: rebuilt %s with %d fenced language(s)"
+              % (GENERATED_SYNTAX_FILE, count))
 
 
 def _show_open_markdown_views():

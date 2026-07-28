@@ -43,6 +43,18 @@
     // (no need to place the caret first). Set to false for keyboard-only navigation.
     "section_ref_popup": true,
 
+    // Keep a generated "MarkdownRich" Markdown syntax in sync with the syntaxes you have
+    // installed, so fenced code blocks highlight for languages Sublime's own Markdown
+    // syntax doesn't cover (mermaid, d2, ...). Written to Packages/User, rebuilt on load
+    // and via "MarkdownRich: Rebuild Markdown syntax". Select it per file, or make it the
+    // default with "Open all with current extension as...".
+    "generate_markdown_syntax": true,
+
+    // Syntax the generated one inherits from. The default adds fenced languages to
+    // plain Markdown; point it at "Packages/Markdown/MultiMarkdown.sublime-syntax" to
+    // keep MultiMarkdown's metadata block as well.
+    "markdown_syntax_parent": "Packages/Markdown/Markdown.sublime-syntax",
+
     // Render ```mermaid fenced blocks as diagrams: the source folds away and the image
     // takes its place. Click the diagram (or its "source" label) to switch back.
     "render_mermaid": true,
