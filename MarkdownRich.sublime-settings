@@ -39,6 +39,37 @@
     // Accent color for inline status annotations (loading / not-found / fetch-failed).
     "status_color": "#c0863a",
 
+    // Render ```mermaid fenced blocks as diagrams: the source folds away and the image
+    // takes its place. Click the diagram (or its "source" label) to switch back.
+    "render_mermaid": true,
+
+    // Path to the mermaid-cli binary. Empty = look for "mmdc" on PATH (extended with
+    // homebrew / asdf / volta / nvm bin dirs, since GUI apps don't inherit a login PATH).
+    // Set this when the diagram falls back to the remote renderer unexpectedly.
+    "mermaid_cli_path": "",
+
+    // When mermaid-cli is missing or fails, render via a Kroki server instead.
+    // NOTE: this sends the diagram source to the endpoint below. Set to false to keep
+    // rendering strictly local, or point the endpoint at a self-hosted Kroki instance.
+    "mermaid_remote_fallback": true,
+    "mermaid_remote_endpoint": "https://kroki.io",
+
+    // Mermaid theme: "auto", "default", "dark", "neutral", or "forest".
+    // "auto" reads the color scheme's background and picks "dark" for dark schemes,
+    // "default" for light ones, so diagram text never lands dark-on-dark.
+    "mermaid_theme": "auto",
+
+    // Diagram background: "auto" (the color scheme's own background, so the diagram
+    // blends into the editor), a color like "#ffffff", or "transparent".
+    "mermaid_background": "auto",
+
+    // Device pixel ratio the diagram is rendered at (2 = crisp on retina). The phantom
+    // is displayed at 1/scale of the rendered size, so this trades cache size for sharpness.
+    "mermaid_scale": 2,
+
+    // Width cap for the displayed diagram (after undoing mermaid_scale).
+    "mermaid_max_width": 800,
+
     // Open file links (ctrl+enter / triple-click) beside the origin Markdown: the
     // opened file is placed in the same group and both sheets are selected, so
     // Sublime tiles them side-by-side without changing the window layout. Only

@@ -3,6 +3,7 @@
     {"caption": "MarkdownRich: Hide inline images", "command": "markdown_rich_clear_images"},
     {"caption": "MarkdownRich: Toggle inline images", "command": "markdown_rich_toggle_images"},
     {"caption": "MarkdownRich: Cycle all image sizes", "command": "markdown_rich_cycle_all_images"},
+    {"caption": "MarkdownRich: Toggle mermaid diagrams", "command": "markdown_rich_toggle_mermaid"},
     {
         "caption": "MarkdownRich: Settings",
         "command": "edit_settings",

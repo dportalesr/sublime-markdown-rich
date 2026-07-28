@@ -3,6 +3,8 @@
 import os
 import re
 import hashlib
+import shutil
+import subprocess
 import tempfile
 import threading
 import urllib.request
@@ -12,18 +14,25 @@ import webbrowser
 import sublime
 import sublime_plugin
 
-# Pure section-reference logic lives in a sibling module with no `sublime` import so
-# it stays unit-testable. Relative import inside the package, plain import as fallback.
+# Pure section-reference and mermaid logic lives in sibling modules with no `sublime`
+# import so they stay unit-testable. Relative import inside the package, plain import
+# as fallback.
 try:
     from .section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
+    from .mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
+                          auto_theme, with_theme_directive)
 except (ImportError, ValueError, SystemError):
     from section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
+    from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
+                         auto_theme, with_theme_directive)
 
 SETTINGS_FILE = "MarkdownRich.sublime-settings"
 MARKDOWN_SELECTOR = "text.html.markdown"
 PHANTOM_KEY = "markdown_rich_images"
 STATUS_KEY = "markdown_rich_status"
 SECTION_KEY = "markdown_rich_section_refs"
+MERMAID_PHANTOM_KEY = "markdown_rich_mermaid"
+MERMAID_STATUS_KEY = "markdown_rich_mermaid_status"
 # Sublime has no syntax injection, so §-refs are link-styled by the plugin via
 # add_regions rather than a scope. find_all wants a pattern string; reuse the pure
 # module's regex (its capture group doesn't narrow the match extent) so the finder
@@ -200,20 +209,6 @@ def _section_target(view, label):
     return lines[idx] if idx is not None else None
 
 
-# Link-color foreground + underline, no fill/outline (the underline flags require both
-# NO_FILL and NO_OUTLINE). Makes §-refs read as links without owning the syntax.
-_SECTION_DRAW = sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE | sublime.DRAW_SOLID_UNDERLINE
-
-
-def _style_section_refs(view):
-    """Paint every `§N` ref (outside code) with the color scheme's link style."""
-    regions = [
-        r for r in view.find_all(SECTION_REF_FIND_RE)
-        if not view.match_selector(r.begin(), "markup.raw")
-    ]
-    view.add_regions(SECTION_KEY, regions, "markup.underline.link", flags=_SECTION_DRAW)
-
-
 # --- image dimension probing (no PIL dependency) ----------------------------
 
 def _png_size(d):
@@ -327,13 +322,190 @@ def _github_token():
     return ""
 
 
-def _fetch_bytes(src):
+def _fetch_bytes(src, timeout=15):
     req = urllib.request.Request(src, headers={"User-Agent": "SublimeMarkdownRich"})
     token = _github_token()
     if token and _is_github_host(src):
         req.add_header("Authorization", "Bearer " + token)
-    with _OPENER.open(req, timeout=15) as resp:
+    with _OPENER.open(req, timeout=timeout) as resp:
         return resp.read()
+
+
+# --- mermaid rendering (local mermaid-cli, remote kroki fallback) -------------
+
+# Sublime inherits a GUI process environment, so a login shell's PATH additions
+# (homebrew, asdf/rbenv shims, npm prefixes) are missing. mermaid-cli's shebang also
+# needs `node` on PATH, not just `mmdc`, so both get these directories.
+_EXTRA_PATH = [
+    "/opt/homebrew/bin", "/usr/local/bin",
+    os.path.expanduser("~/.asdf/shims"), os.path.expanduser("~/.local/bin"),
+    os.path.expanduser("~/.volta/bin"), os.path.expanduser("~/.nvm/current/bin"),
+]
+
+
+def _mermaid_env():
+    env = os.environ.copy()
+    parts = [p for p in _EXTRA_PATH if os.path.isdir(p)]
+    env["PATH"] = os.pathsep.join(parts + [env.get("PATH", "")])
+    return env
+
+
+def _mermaid_opts(view=None):
+    """Render options that also key the cache: theme, background, scale, display cap.
+
+    Both `"auto"` values come from the color scheme: the diagram is drawn on the
+    editor's own background, and the theme is picked to contrast with it. A dark
+    scheme with mermaid's light `default` theme would otherwise put near-black text
+    on a near-black backdrop.
+    """
+    s = _settings()
+    theme = s.get("mermaid_theme", "auto")
+    background = s.get("mermaid_background", "auto")
+    if theme == "auto" or background == "auto":
+        editor_bg = (view.style() or {}).get("background", "#ffffff") if view else "#ffffff"
+        if theme == "auto":
+            theme = auto_theme(editor_bg)
+        if background == "auto":
+            background = editor_bg
+    return {
+        "theme": theme,
+        "background": background,
+        "scale": s.get("mermaid_scale", 2),
+        "max_width": s.get("mermaid_max_width", 800),
+    }
+
+
+def _mermaid_key(source, opts):
+    return cache_key(source, opts["theme"], opts["background"], opts["scale"])
+
+
+def _mermaid_path(key, scale):
+    """Cache path for a render, tagged with the scale it was actually rendered at.
+
+    mermaid-cli honours `-s`, kroki always renders at 1x, so the factor the phantom
+    must divide by is a property of the *file*, not of the current settings. Tagging it
+    into the name keeps that straight without a sidecar.
+
+    The separator is a plain `-`: `pathname2url` percent-escapes `@`, and minihtml
+    takes the `src` literally, so an `@2x` name resolves to a file that doesn't exist.
+    """
+    return os.path.join(_cache_dir(), "mermaid-%s-%sx.png" % (key, scale))
+
+
+def _cached_render(key, opts):
+    """First cached render for `key`: (path, rendered_scale), or (None, None)."""
+    for scale in (opts["scale"], 1):
+        path = _mermaid_path(key, scale)
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return path, scale
+    return None, None
+
+
+def _mmdc_binary():
+    """Configured mermaid-cli path, else `mmdc` on the augmented PATH, else None."""
+    configured = os.path.expanduser(_settings().get("mermaid_cli_path", "") or "")
+    if configured:
+        return configured if os.path.exists(configured) else None
+    return shutil.which("mmdc", path=_mermaid_env()["PATH"])
+
+
+def _mmdc_error(output, returncode):
+    """Pick the one useful line out of mermaid-cli's output.
+
+    The interesting line is neither the first (a progress banner) nor the last (a
+    puppeteer stack frame). Dropping the noise leaves the actual complaint at the top:
+    "Error: Parse error on line 2:" for a bad diagram, "No version is set for command
+    mmdc" when a version-manager shim intercepted the call.
+    """
+    noise = ("generating single mermaid chart",)
+    for line in (output or "").splitlines():
+        line = line.strip()
+        if not line or line.lower().startswith(noise) or line.startswith("at "):
+            continue
+        if "node_modules" in line:   # stack frames, with or without the "at " prefix
+            continue
+        return line[:160]
+    return "exit %d" % returncode
+
+
+def _mmdc_render(binary, source, dest, opts):
+    """Render `source` to `dest` with mermaid-cli. Raises RuntimeError on failure."""
+    tmp_dir = tempfile.mkdtemp(prefix="markdown_rich_")
+    src_path = os.path.join(tmp_dir, "diagram.mmd")
+    out_path = os.path.join(tmp_dir, "diagram.png")
+    try:
+        with open(src_path, "w", encoding="utf-8") as f:
+            f.write(source)
+        args = mmdc_args(binary, src_path, out_path, opts["theme"], opts["background"], opts["scale"])
+        proc = subprocess.run(
+            args, cwd=tmp_dir, env=_mermaid_env(), timeout=120,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        if proc.returncode != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            output = (proc.stdout or b"").decode("utf-8", "replace")
+            raise RuntimeError(_mmdc_error(output, proc.returncode))
+        # Move into the cache only once complete: a render() on another thread must
+        # never find a half-written PNG at the path it is about to display.
+        shutil.move(out_path, dest)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _kroki_render(source, dest, theme):
+    """Render `source` via the kroki endpoint. Retries once: kroki 500s are transient.
+
+    Kroki takes no theme flag, so the theme rides along inside the diagram source as an
+    init directive. The background stays whatever the theme paints, since there is no
+    knob for it either: a dark theme is legible on a dark editor regardless.
+    """
+    endpoint = _settings().get("mermaid_remote_endpoint", "https://kroki.io")
+    url = remote_url(endpoint, with_theme_directive(source, theme))
+    last = None
+    for _ in range(2):
+        try:
+            data = _fetch_bytes(url, timeout=60)
+        except Exception as e:
+            last = e
+            continue
+        if not _png_size(data):
+            last = RuntimeError("response was not a PNG")
+            continue
+        partial = dest + ".part"
+        with open(partial, "wb") as f:
+            f.write(data)
+        os.replace(partial, dest)   # atomic: no half-written PNG is ever displayed
+        return
+    raise RuntimeError(str(last))
+
+
+def _render_mermaid(source, key, opts):
+    """Render `source` into the cache: local mermaid-cli first, kroki as fallback.
+
+    Each backend writes to the path tagged with the scale it renders at (mermaid-cli
+    honours `mermaid_scale`, kroki is always 1x).
+
+    Raises RuntimeError describing every attempt that failed, so the annotation can
+    say whether mermaid-cli was missing, errored, or the network render was refused.
+    """
+    problems = []
+    binary = _mmdc_binary()
+    if binary:
+        try:
+            _mmdc_render(binary, source, _mermaid_path(key, opts["scale"]), opts)
+            return
+        except Exception as e:
+            problems.append("mermaid-cli: %s" % e)
+    else:
+        problems.append("mermaid-cli not found")
+    if _settings().get("mermaid_remote_fallback", True):
+        try:
+            _kroki_render(source, _mermaid_path(key, 1), opts["theme"])
+            return
+        except Exception as e:
+            problems.append("remote render: %s" % e)
+    else:
+        problems.append("remote fallback disabled")
+    raise RuntimeError("; ".join(problems))
 
 
 # --- per-view phantom manager ------------------------------------------------
@@ -558,6 +730,200 @@ class PhantomManager:
             self.cycle(int(href[len("mrich:"):]))
 
 
+# --- per-view mermaid manager ------------------------------------------------
+
+_mermaid_managers = {}
+
+
+def _mermaid(view):
+    m = _mermaid_managers.get(view.id())
+    if m is None:
+        m = MermaidManager(view)
+        _mermaid_managers[view.id()] = m
+    return m
+
+
+class MermaidManager:
+    """Folds ```mermaid blocks and renders the diagram in their place.
+
+    State is keyed by the block's cache key (content + render options) rather than its
+    ordinal, so toggling one block to source survives edits elsewhere in the document,
+    and editing a diagram naturally starts it back at the rendered state.
+    """
+
+    def __init__(self, view):
+        self.view = view
+        self.pset = sublime.PhantomSet(view, MERMAID_PHANTOM_KEY)
+        self.as_source = set()   # cache keys the user switched to source view
+        self._rendering = set()
+        self._failed = {}        # cache key -> error message
+        self._caret_keys = frozenset()
+
+    def clear(self):
+        """Drop every diagram phantom and reveal all folded blocks."""
+        self.pset.update([])
+        self.view.erase_regions(MERMAID_STATUS_KEY)
+        for b in self._blocks():
+            self.view.unfold(sublime.Region(b.body_start, b.end))
+
+    def toggle_all(self):
+        """Flip the whole document: any diagram showing -> all source, else all diagrams."""
+        opts = _mermaid_opts(self.view)
+        keys = [_mermaid_key(b.source, opts) for b in self._blocks()]
+        if not keys:
+            sublime.status_message("MarkdownRich: no mermaid blocks")
+            return
+        if any(k not in self.as_source for k in keys):
+            self.as_source.update(keys)
+        else:
+            self.as_source.difference_update(keys)
+        self.render()
+
+    def render(self):
+        view = self.view
+        if not _settings().get("render_mermaid", True):
+            self.clear()
+            return
+        opts = _mermaid_opts(self.view)
+        blocks = self._blocks()
+        self._caret_keys = self._keys_at_caret(blocks, opts)
+        phantoms, regions, annotations = [], [], []
+        for b in blocks:
+            key = _mermaid_key(b.source, opts)
+            fold = sublime.Region(b.body_start, b.end)
+            anchor = sublime.Region(b.start)
+            # Every state annotates the same spot, the end of the fence line, so the
+            # control never moves: only its label changes with the state.
+            regions.append(anchor)
+            if key in self.as_source or key in self._caret_keys:
+                view.unfold(fold)
+                annotations.append('<a href="mmd:img:%s">Show diagram</a>' % key)
+                continue
+            if key in self._failed:
+                view.unfold(fold)
+                annotations.append('&#9888; %s &middot; <a href="mmd:retry:%s">retry</a>'
+                                   % (_esc(self._failed[key]), key))
+                continue
+            path, rendered_scale = _cached_render(key, opts)
+            if path is None:
+                view.unfold(fold)
+                annotations.append("&#8987; rendering diagram&#8230;")
+                self._start_render(b.source, key, opts)
+                continue
+            view.fold(fold)
+            annotations.append('<a href="mmd:src:%s">Show source</a>' % key)
+            phantoms.append(sublime.Phantom(
+                anchor, self._diagram_html(key, path, rendered_scale, opts),
+                sublime.LAYOUT_BLOCK, on_navigate=self._on_nav,
+            ))
+        self.pset.update(phantoms)
+        if regions:
+            view.add_regions(
+                MERMAID_STATUS_KEY, regions, "comment",
+                flags=sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE,
+                annotations=annotations,
+                annotation_color=_settings().get("status_color", "#c0863a"),
+                on_navigate=self._on_nav,
+            )
+        else:
+            view.erase_regions(MERMAID_STATUS_KEY)
+
+    def sync_caret(self):
+        """Re-render only when the set of blocks holding the caret changed.
+
+        A block under the caret shows its source so it stays editable (a folded region
+        can't be typed into); moving away folds it back to the diagram.
+        """
+        opts = _mermaid_opts(self.view)
+        blocks = self._blocks()
+        keys = self._keys_at_caret(blocks, opts)
+        if keys != self._caret_keys:
+            self.render()
+
+    def _blocks(self):
+        """Fenced mermaid blocks, re-scanned only when the buffer actually changed.
+
+        Caret moves re-run this on every settled selection change, and the scan reads
+        the whole buffer, so it's memoized on `change_count`.
+        """
+        count = self.view.change_count()
+        if count != getattr(self, "_blocks_at", None):
+            self._blocks_cache = find_blocks(self.view.substr(sublime.Region(0, self.view.size())))
+            self._blocks_at = count
+        return self._blocks_cache
+
+    def _keys_at_caret(self, blocks, opts):
+        """Keys of blocks whose *body* holds a caret. The fence line is excluded: it
+        stays visible when folded, and parking the caret there is how a block folds
+        back after editing it."""
+        points = [r.begin() for r in self.view.sel()] + [r.end() for r in self.view.sel()]
+        return frozenset(
+            _mermaid_key(b.source, opts) for b in blocks
+            if any(b.body_start <= p <= b.end for p in points)
+        )
+
+    def _start_render(self, source, key, opts):
+        if key in self._rendering:
+            return
+        self._rendering.add(key)
+
+        def worker():
+            err = None
+            try:
+                _render_mermaid(source, key, opts)
+            except Exception as e:
+                err = str(e)
+            finally:
+                self._rendering.discard(key)
+
+            def done():
+                if err:
+                    self._failed[key] = err   # stop the re-render loop; offer a retry
+                self.render()
+
+            sublime.set_timeout(done, 0)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _diagram_html(self, key, path, rendered_scale, opts):
+        """The diagram alone. The state control lives in the fence-line annotation, so
+        the phantom carries no footer; clicking the image is just a shortcut for it."""
+        w, h = display_size(_image_size(path), rendered_scale, opts["max_width"])
+        dims = (' width="%d"' % w if w else "") + (' height="%d"' % h if h else "")
+        body = (
+            '<div class="mr-c">'
+            '<a href="mmd:src:%s"><img src="%s"%s></a>'
+            '</div>'
+        ) % (key, _file_src(path), dims)
+        return '<body>' + _PHANTOM_STYLE + body + '</body>'
+
+    def _on_nav(self, href):
+        action, _, key = href[len("mmd:"):].partition(":")
+        if action == "src":
+            self.as_source.add(key)
+        elif action == "img":
+            self.as_source.discard(key)
+            self._park_caret_outside(key)
+        elif action == "retry":
+            self._failed.pop(key, None)
+        self.render()
+
+    def _park_caret_outside(self, key):
+        """Move a caret sitting in this block's body up to its fence line.
+
+        Without this, asking for the diagram while editing the block would do nothing
+        visible: the caret would keep the block unfolded on the very next render.
+        """
+        opts = _mermaid_opts(self.view)
+        for b in self._blocks():
+            if _mermaid_key(b.source, opts) != key:
+                continue
+            if any(b.body_start <= r.begin() <= b.end for r in self.view.sel()):
+                self.view.sel().clear()
+                self.view.sel().add(sublime.Region(b.start))
+            return
+
+
 # --- listeners / commands ----------------------------------------------------
 
 class MarkdownRichImages(sublime_plugin.ViewEventListener):
@@ -565,14 +931,28 @@ class MarkdownRichImages(sublime_plugin.ViewEventListener):
     def is_applicable(cls, settings):
         return "Markdown" in (settings.get("syntax") or "")
 
+    def _debounce(self, name, delay, fn):
+        """Run `fn` once a burst of events settles (last call within `delay` wins)."""
+        attr = "_token_" + name
+        token = getattr(self, attr, 0) + 1
+        setattr(self, attr, token)
+
+        def fire():
+            if token == getattr(self, attr, 0):
+                fn()
+
+        sublime.set_timeout(fire, delay)
+
     def on_load_async(self):
         _style_section_refs(self.view)
+        _mermaid(self.view).render()
         if _settings().get("auto_show_on_load", True):
             _manager(self.view).show()
 
     def on_activated_async(self):
         # Covers buffers already open when the plugin loaded, and tab focus.
         _style_section_refs(self.view)
+        _mermaid(self.view).render()
         m = _manager(self.view)
         if not m.visible and _settings().get("auto_show_on_load", True):
             m.show()
@@ -580,17 +960,17 @@ class MarkdownRichImages(sublime_plugin.ViewEventListener):
     def on_modified_async(self):
         # Section-ref styling tracks edits live (like real link highlighting would).
         # Debounced so a burst of keystrokes only restyles once things settle.
-        self._section_token = getattr(self, "_section_token", 0) + 1
-        token = self._section_token
+        self._debounce("section", 120, lambda: _style_section_refs(self.view))
+        # Diagrams are re-scanned on a longer delay: an edited block gets a new cache
+        # key, so it re-renders (or reuses an earlier render) once typing pauses.
+        self._debounce("mermaid", 500, lambda: _mermaid(self.view).render())
 
-        def restyle():
-            if token == self._section_token:
-                _style_section_refs(self.view)
-
-        sublime.set_timeout(restyle, 120)
+    def on_selection_modified_async(self):
+        self._debounce("mermaid_caret", 200, lambda: _mermaid(self.view).sync_caret())
 
     def on_post_save_async(self):
         _style_section_refs(self.view)
+        _mermaid(self.view).render()
         m = _manager(self.view)
         if m.visible:
             m.render()
@@ -613,6 +993,12 @@ class MarkdownRichImages(sublime_plugin.ViewEventListener):
 
     def on_close(self):
         _managers.pop(self.view.id(), None)
+        _mermaid_managers.pop(self.view.id(), None)
+
+
+class MarkdownRichToggleMermaidCommand(sublime_plugin.TextCommand):
+    def run(self, edit):
+        _mermaid(self.view).toggle_all()
 
 
 class MarkdownRichShowImagesCommand(sublime_plugin.TextCommand):
@@ -703,5 +1089,6 @@ def _show_open_markdown_views():
             if "Markdown" not in (view.settings().get("syntax") or ""):
                 continue
             _style_section_refs(view)   # always-on, independent of image auto-show
+            _mermaid(view).render()
             if auto_show:
                 _manager(view).show()
