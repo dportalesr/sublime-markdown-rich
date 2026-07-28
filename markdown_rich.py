@@ -1104,6 +1104,16 @@ def _find_diagram_view(origin, ordinal):
     return None
 
 
+def _reveal_diagram_view(view, origin):
+    """Bring a diagram tab to the front, beside the document it belongs to."""
+    window = view.window() or origin.window()
+    if window is None:
+        return
+    window.focus_view(view)
+    if _settings().get("open_link_side_by_side", True):
+        _reveal_beside(window, origin, view)
+
+
 def _open_diagram_view(window, path, origin, ordinal):
     """A scratch tab showing one diagram, on the editor's own background."""
     view = window.new_file()
@@ -1348,6 +1358,14 @@ class MermaidManager:
         if action == "src":
             self.as_source.add(key)
         elif action == "img":
+            # With a tab already open the block stays on source, so re-rendering would
+            # change nothing on screen. The diagram being asked for is in that tab.
+            ordinal = self._ordinal_of(key, _mermaid_opts(self.view))
+            existing = _find_diagram_view(self.view, ordinal) if ordinal is not None else None
+            if existing is not None:
+                _log("diagram %s is open, revealing its tab", key[:12])
+                _reveal_diagram_view(existing, self.view)
+                return
             self.as_source.discard(key)
             self._park_caret_outside(key)
         elif action == "retry":
@@ -1402,11 +1420,10 @@ class MermaidManager:
                 _render_diagram_view(existing, path,
                                      existing.settings().get("markdown_rich_diagram_fit", True),
                                      force=True)
-            existing.window().focus_view(existing)
+            _reveal_diagram_view(existing, self.view)
             return
         opened = _open_diagram_view(window, path, self.view, ordinal)
-        if _settings().get("open_link_side_by_side", True):
-            _reveal_beside(window, self.view, opened)
+        _reveal_diagram_view(opened, self.view)
 
     def _park_caret_outside(self, key):
         """Move a caret sitting in this block's body up to its fence line.

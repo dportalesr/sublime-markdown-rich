@@ -89,6 +89,8 @@ Owning the markup means the tab can carry a `fit / actual size` toggle. Redrawin
 
 Renders start on load, on focus, on save and on an explicit `Show diagram`, never on modification. A block with a tab following it renders on save too, even though it is showing its source, since that render is what the tab is waiting for. Moving the caret out of an edited block redraws with renders disabled, so it folds and unfolds without spending a subprocess or a network request on half-written text.
 
+A block with a tab open stays on source, so `Show diagram` has no state left to change; it reveals the tab instead, which is the only place that diagram now exists. Both it and `Open image` go through the same reveal, so the pairing of document and diagram is consistent however you got there.
+
 An open tab is registered against the origin view and the block's ordinal position, and every render pass repoints it at the newest cache entry for that block. Tracking the position rather than the file is what makes edits show up: a changed diagram hashes to a different entry, so the file the tab opened with is never updated. The swap waits for the new render to exist, so an edit in progress leaves the last good picture on screen.
 
 Scrolling to a diagram wider than the window takes a line of spaces as wide as the image, since phantoms add vertical layout but no horizontal extent. It is written once when the tab opens, sized to the render, so switching size never edits the buffer the phantom is anchored to.
