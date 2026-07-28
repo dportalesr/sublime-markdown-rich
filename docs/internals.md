@@ -83,7 +83,9 @@ Three keys are required in the generated file and none are inherited through `ex
 
 `Open image` doesn't hand the PNG to Sublime's image viewer, which draws a checkerboard behind transparent pixels: a diagram left to blend with the editor is mostly transparent, so it would arrive on a chessboard. Instead the plugin opens a scratch view holding a single phantom, so the image composites over the color scheme's background exactly as the inline one does, and the file keeps its alpha.
 
-Owning the markup means the tab can carry a `fit / actual size` toggle. Redrawing to switch between them re-creates the phantom, image and all.
+Diagram images are embedded as `data:` URLs rather than referenced by `file://`. minihtml loads a file-backed image asynchronously and draws `broken_image.png` until the bytes arrive, stretched to whatever width and height the tag asked for, which on a full-size diagram is an enormous red-and-white icon. Embedding costs about a third more bytes in the phantom's HTML and removes the load entirely. Encodings are cached by path and mtime, since inline phantoms re-render on save, focus and typing, and anything over 4MB falls back to `file://`.
+
+Owning the markup means the tab can carry a `fit / actual size` toggle. Redrawing to switch between them is only safe because the image is embedded; while it was loaded from `file://`, every redraw flashed the broken-image glyph, and the toggle had to be removed until the data URL fixed the cause.
 
 Scrolling to a diagram wider than the window takes a line of spaces as wide as the image, since phantoms add vertical layout but no horizontal extent. It is written once when the tab opens, sized to the render, so switching size never edits the buffer the phantom is anchored to.
 

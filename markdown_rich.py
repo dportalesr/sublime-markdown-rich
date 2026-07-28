@@ -2,6 +2,7 @@
 
 import os
 import re
+import base64
 import hashlib
 import shutil
 import subprocess
@@ -334,6 +335,39 @@ def _image_size(path):
 
 def _file_src(path):
     return "file://" + urllib.request.pathname2url(path)
+
+
+# Encoded diagrams, keyed by path and mtime. Inline phantoms re-render on save, focus
+# and (debounced) typing, so the encoding has to survive between renders.
+_data_src_cache = {}
+#: Past this, embedding costs more than the flash it avoids.
+DATA_SRC_LIMIT = 4 * 1024 * 1024
+
+
+def _data_src(path):
+    """A `data:` URL for an image, or a `file://` one when it is too large.
+
+    minihtml loads a `file://` image asynchronously, drawing its broken-image glyph
+    until the bytes arrive, stretched to whatever width and height the tag asks for.
+    Embedding the image removes the load, and with it the flash.
+    """
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return _file_src(path)
+    if stat.st_size > DATA_SRC_LIMIT:
+        return _file_src(path)
+    key = (path, stat.st_mtime, stat.st_size)
+    cached = _data_src_cache.get(key)
+    if cached is None:
+        try:
+            with open(path, "rb") as f:
+                cached = "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+        except OSError:
+            return _file_src(path)
+        _data_src_cache.clear()      # only the current renders are worth holding on to
+        _data_src_cache[key] = cached
+    return cached
 
 
 def _esc(s):
@@ -1002,7 +1036,7 @@ def _full_diagram_html(view, path, fit):
     return ('<body>' + DIAGRAM_VIEW_STYLE +
             '<div><img src="%s"%s></div>'
             '<div class="mr-f">%s</div></body>'
-            % (_file_src(path), dims, ' &middot; '.join(labels)))
+            % (_data_src(path), dims, ' &middot; '.join(labels)))
 
 
 def _render_diagram_view(view, path, fit):
@@ -1240,7 +1274,7 @@ class MermaidManager:
             '<div class="mr-c">'
             '<a href="mmd:src:%s"><img src="%s"%s></a>'
             '</div>'
-        ) % (key, _file_src(path), dims)
+        ) % (key, _data_src(path), dims)
         return '<body>' + _PHANTOM_STYLE + body + '</body>'
 
     def _on_nav(self, href):
