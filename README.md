@@ -78,16 +78,17 @@ Open any Markdown file and it starts working. For highlighted code fences, pick 
 
 ## Commands
 
-| Command                                 | What it does                                            |
-|-----------------------------------------|---------------------------------------------------------|
-| `MarkdownRich: Toggle inline images`    | Show or hide every image in the view                    |
-| `MarkdownRich: Show inline images`      | Render images in the view                               |
-| `MarkdownRich: Hide inline images`      | Clear them                                              |
-| `MarkdownRich: Cycle all image sizes`   | Resize every image at once                              |
-| `MarkdownRich: Toggle mermaid diagrams` | Flip every diagram in the view between chart and source |
-| `MarkdownRich: Clear Cache`             | Re-fetch and re-render everything, after a bad render   |
-| `MarkdownRich: Rebuild Markdown syntax` | Pick up languages installed since the last restart      |
-| `MarkdownRich: Settings`                | Open your settings beside the defaults                  |
+| Command                                 | What it does                                               |
+|-----------------------------------------|------------------------------------------------------------|
+| `MarkdownRich: Toggle inline images`    | Show or hide every image in the view                       |
+| `MarkdownRich: Show inline images`      | Render images in the view                                  |
+| `MarkdownRich: Hide inline images`      | Clear them                                                 |
+| `MarkdownRich: Cycle all image sizes`   | Resize every image at once                                 |
+| `MarkdownRich: Toggle mermaid diagrams` | Flip every diagram in the view between chart and source    |
+| `MarkdownRich: Clear Cache`             | Re-fetch and re-render everything, after a bad render      |
+| `MarkdownRich: Rebuild Markdown syntax` | Pick up languages installed since the last restart         |
+| `MarkdownRich: Toggle debug logging`    | Report fetches and renders to the console while you work   |
+| `MarkdownRich: Settings`                | Open your settings beside the defaults                     |
 
 ## Settings
 
@@ -109,6 +110,7 @@ Defaults live in `MarkdownRich.sublime-settings`; override them in `Packages/Use
 | `status_color`             | `"#c0863a"`                                          | Color of the inline loading and error notes                     |
 | `open_link_side_by_side`   | `true`                                               | Opened files appear beside the document                         |
 | `section_ref_popup`        | `true`                                               | Hovering a `§`-reference previews its target                    |
+| `debug`                    | `false`                                              | Log image downloads and diagram renders to the Sublime console  |
 | `generate_markdown_syntax` | `true`                                               | Keep code-fence highlighting in sync with installed languages   |
 | `markdown_syntax_parent`   | `"Packages/Markdown/Markdown.sublime-syntax"`        | Base Markdown syntax to build on, e.g. MultiMarkdown            |
 
@@ -135,6 +137,8 @@ A fine-grained token with `Contents: read` is enough.
 ## When something looks wrong
 
 A failed image or diagram shows an inline note with a **retry** link, which is usually all it takes. If a render succeeded but produced the wrong thing (a diagram made before mermaid-cli was installed, say, or one from a previous color scheme), run `MarkdownRich: Clear Cache`.
+
+When it's less obvious than that (a render that seems stuck, or an edit that doesn't appear to take), turn on `MarkdownRich: Toggle debug logging` and watch the console: every download and render reports which backend ran, how long it took, and the cache key each block resolved to. An edit that produces the same key never reached the block being rendered.
 
 ## More
 

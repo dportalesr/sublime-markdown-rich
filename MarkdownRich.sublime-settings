@@ -43,6 +43,12 @@
     // (no need to place the caret first). Set to false for keyboard-only navigation.
     "section_ref_popup": true,
 
+    // Log resource work to the Sublime console: image downloads, diagram renders,
+    // which backend ran, how long it took, and the cache key each block resolved to.
+    // Useful when a render seems stuck or an edit doesn't appear to take effect.
+    // Toggle it from the palette with "MarkdownRich: Toggle debug logging".
+    "debug": false,
+
     // Keep a generated "MarkdownRich" Markdown syntax in sync with the syntaxes you have
     // installed, so fenced code blocks highlight for languages Sublime's own Markdown
     // syntax doesn't cover (mermaid, d2, ...). Written to Packages/User, rebuilt on load

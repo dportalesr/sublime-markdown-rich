@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import urllib.request
 import urllib.parse
 import webbrowser
@@ -69,6 +70,21 @@ LABEL_STATE = {label: state for state, label in STATE_LABEL.items()}
 
 def _settings():
     return sublime.load_settings(SETTINGS_FILE)
+
+
+def _log(message, *args):
+    """Print to the Sublime console when `debug` is on.
+
+    Renders happen on background threads behind a cache, so "nothing happened" and
+    "it worked, from cache" and "it failed and will retry" all look identical from
+    the outside. This makes them distinguishable without attaching a debugger.
+    """
+    if _settings().get("debug", False):
+        print("MarkdownRich: " + (message % args if args else message))
+
+
+def _elapsed(started):
+    return "%.1fs" % (time.monotonic() - started)
 
 
 def _default_state():
@@ -528,15 +544,19 @@ def _mmdc_render(binary, source, dest, opts):
         with open(src_path, "w", encoding="utf-8") as f:
             f.write(source)
         args = mmdc_args(binary, src_path, out_path, opts["theme"], opts["background"], opts["scale"])
+        _log("mermaid-cli: %s", " ".join(args))
+        started = time.monotonic()
         proc = subprocess.run(
             args, cwd=tmp_dir, env=_mermaid_env(), timeout=120,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         )
+        _log("mermaid-cli exited %d in %s", proc.returncode, _elapsed(started))
         if proc.returncode != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
             output = (proc.stdout or b"").decode("utf-8", "replace")
             raise RuntimeError(_mmdc_error(output, proc.returncode))
         # Move into the cache only once complete: a render() on another thread must
         # never find a half-written PNG at the path it is about to display.
+        _log("mermaid-cli produced %d bytes -> %s", os.path.getsize(out_path), dest)
         shutil.move(out_path, dest)
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -552,15 +572,21 @@ def _kroki_render(source, dest, theme):
     endpoint = _settings().get("mermaid_remote_endpoint", "https://kroki.io")
     url = remote_url(endpoint, with_theme_directive(source, theme))
     last = None
-    for _ in range(2):
+    for attempt in (1, 2):
+        _log("kroki GET %s/mermaid/png (%d byte payload, attempt %d)",
+             endpoint.rstrip("/"), len(url.rsplit("/", 1)[-1]), attempt)
+        started = time.monotonic()
         try:
             data = _fetch_bytes(url, timeout=60)
         except Exception as e:
             last = e
+            _log("kroki failed after %s: %s", _elapsed(started), e)
             continue
         if not _png_size(data):
             last = RuntimeError("response was not a PNG")
+            _log("kroki returned %d bytes that are not a PNG", len(data))
             continue
+        _log("kroki ok: %d bytes in %s -> %s", len(data), _elapsed(started), dest)
         partial = dest + ".part"
         with open(partial, "wb") as f:
             f.write(data)
@@ -580,12 +606,14 @@ def _render_mermaid(source, key, opts):
     """
     problems = []
     binary = _mmdc_binary()
+    _log("render %s: mermaid-cli %s", key[:12], binary or "not found")
     if binary:
         try:
             _mmdc_render(binary, source, _mermaid_path(key, opts["scale"]), opts)
             return
         except Exception as e:
             problems.append("mermaid-cli: %s" % e)
+            _log("mermaid-cli failed: %s", e)
     else:
         problems.append("mermaid-cli not found")
     if _settings().get("mermaid_remote_fallback", True):
@@ -594,8 +622,10 @@ def _render_mermaid(source, key, opts):
             return
         except Exception as e:
             problems.append("remote render: %s" % e)
+            _log("remote render failed: %s", e)
     else:
         problems.append("remote fallback disabled")
+        _log("remote fallback disabled, giving up on %s", key[:12])
     raise RuntimeError("; ".join(problems))
 
 
@@ -690,6 +720,7 @@ class PhantomManager:
         self.count = 0
         self._fetching = set()
         self._failed = {}    # remote src -> error message (prevents refetch loop)
+        self._logged_cache = set()   # sources already reported to the console (debug only)
         self._avail = {}     # ordinal index -> available size states (medium may be merged out)
 
     def show(self):
@@ -780,23 +811,31 @@ class PhantomManager:
             return ("error", self._failed[src])
         cached = _cached_path(src)
         if os.path.exists(cached) and os.path.getsize(cached) > 0:
+            if src not in self._logged_cache:
+                self._logged_cache.add(src)
+                _log("image cache hit: %s -> %s", src, os.path.basename(cached))
             return ("ok", cached)
         self._start_fetch(src, cached)
         return ("loading", None)
 
     def _start_fetch(self, src, dest):
         if src in self._fetching:
+            _log("image fetch already in flight: %s", src)
             return
         self._fetching.add(src)
+        _log("image fetch start: %s", src)
 
         def worker():
-            err = None
+            err, started = None, time.monotonic()
             try:
                 data = _fetch_bytes(src)
                 with open(dest, "wb") as f:
                     f.write(data)
+                _log("image fetch ok: %s (%d bytes in %s) -> %s",
+                     src, len(data), _elapsed(started), dest)
             except Exception as e:
                 err = str(e)
+                _log("image fetch failed: %s (after %s) %s", src, _elapsed(started), err)
             finally:
                 self._fetching.discard(src)
 
@@ -918,6 +957,8 @@ class MermaidManager:
         self._rendering = set()
         self._failed = {}        # cache key -> error message
         self._caret_keys = frozenset()
+        self._logged = set()     # keys already reported to the console (debug only)
+        self._summary = None
 
     def clear(self):
         """Drop every diagram phantom and reveal all folded blocks."""
@@ -965,6 +1006,7 @@ class MermaidManager:
                                    % (_esc(self._failed[key]), key))
                 continue
             path, rendered_scale = _cached_render(key, opts)
+            self._log_block(b, key, path)
             if path is None:
                 view.unfold(fold)
                 annotations.append("&#8987; rendering diagram&#8230;")
@@ -977,6 +1019,10 @@ class MermaidManager:
                 sublime.LAYOUT_BLOCK, on_navigate=self._on_nav,
             ))
         self.pset.update(phantoms)
+        summary = (len(blocks), len(phantoms), len(self._failed), len(self._rendering))
+        if summary != self._summary:
+            self._summary = summary
+            _log("view has %d diagram(s): %d shown, %d failed, %d rendering", *summary)
         if regions:
             view.add_regions(
                 MERMAID_STATUS_KEY, regions, "comment",
@@ -987,6 +1033,19 @@ class MermaidManager:
             )
         else:
             view.erase_regions(MERMAID_STATUS_KEY)
+
+    def _log_block(self, block, key, path):
+        """Report a block's cache identity once, so an edit that didn't take is visible.
+
+        An edited diagram gets a new key; if the console shows the same key after a
+        change, the edit never reached the block being rendered.
+        """
+        if key in self._logged:
+            return
+        self._logged.add(key)
+        _log("block at line %d: key=%s (%d chars) cache=%s",
+             self.view.rowcol(block.start)[0] + 1, key[:12], len(block.source),
+             os.path.basename(path) if path else "miss")
 
     def sync_caret(self):
         """Re-render only when the set of blocks holding the caret changed.
@@ -1024,15 +1083,20 @@ class MermaidManager:
 
     def _start_render(self, source, key, opts):
         if key in self._rendering:
+            _log("diagram %s already rendering, skipping duplicate request", key[:12])
             return
         self._rendering.add(key)
+        _log("diagram %s queued (%d chars, theme=%s bg=%s scale=%s)",
+             key[:12], len(source), opts["theme"], opts["background"], opts["scale"])
 
         def worker():
-            err = None
+            err, started = None, time.monotonic()
             try:
                 _render_mermaid(source, key, opts)
+                _log("diagram %s rendered in %s", key[:12], _elapsed(started))
             except Exception as e:
                 err = str(e)
+                _log("diagram %s failed after %s: %s", key[:12], _elapsed(started), err)
             finally:
                 self._rendering.discard(key)
 
@@ -1187,6 +1251,21 @@ class MarkdownRichRebuildSyntaxCommand(sublime_plugin.ApplicationCommand):
         sublime.status_message(
             "MarkdownRich: %s syntax with %d fenced language(s)"
             % ("rebuilt" if changed else "unchanged", count))
+
+
+class MarkdownRichToggleDebugCommand(sublime_plugin.ApplicationCommand):
+    """Flip console logging on or off without opening the settings file."""
+
+    def run(self):
+        settings = _settings()
+        enabled = not settings.get("debug", False)
+        settings.set("debug", enabled)
+        sublime.save_settings(SETTINGS_FILE)
+        sublime.status_message("MarkdownRich: debug logging %s"
+                               % ("on, see the console" if enabled else "off"))
+
+    def is_checked(self):
+        return bool(_settings().get("debug", False))
 
 
 class MarkdownRichClearCacheCommand(sublime_plugin.TextCommand):
