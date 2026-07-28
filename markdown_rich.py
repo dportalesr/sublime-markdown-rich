@@ -279,6 +279,18 @@ def _cache_dir():
     return d
 
 
+def _clear_cache():
+    """Delete every cached download/render. Returns how many files went."""
+    removed = 0
+    for name in os.listdir(_cache_dir()):
+        try:
+            os.remove(os.path.join(_cache_dir(), name))
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 def _cached_path(url):
     name = hashlib.sha1(url.encode("utf-8")).hexdigest()
     ext = os.path.splitext(urllib.parse.urlparse(url).path)[1] or ".img"
@@ -999,6 +1011,29 @@ class MarkdownRichImages(sublime_plugin.ViewEventListener):
 class MarkdownRichToggleMermaidCommand(sublime_plugin.TextCommand):
     def run(self, edit):
         _mermaid(self.view).toggle_all()
+
+
+class MarkdownRichClearCacheCommand(sublime_plugin.TextCommand):
+    """Drop cached downloads/renders and rebuild every open Markdown view.
+
+    The escape hatch for a failure that isn't the document's fault: a transient fetch
+    error, a diagram rendered before mermaid-cli was reachable, a stale cache entry.
+    """
+
+    def run(self, edit):
+        removed = _clear_cache()
+        for window in sublime.windows():
+            for view in window.views():
+                if "Markdown" not in (view.settings().get("syntax") or ""):
+                    continue
+                m = _manager(view)
+                m._failed.clear()
+                if m.visible:
+                    m.render()
+                mm = _mermaid(view)
+                mm._failed.clear()
+                mm.render()
+        sublime.status_message("MarkdownRich: cleared %d cached file(s), re-rendering" % removed)
 
 
 class MarkdownRichShowImagesCommand(sublime_plugin.TextCommand):

@@ -4,6 +4,7 @@
     {"caption": "MarkdownRich: Toggle inline images", "command": "markdown_rich_toggle_images"},
     {"caption": "MarkdownRich: Cycle all image sizes", "command": "markdown_rich_cycle_all_images"},
     {"caption": "MarkdownRich: Toggle mermaid diagrams", "command": "markdown_rich_toggle_mermaid"},
+    {"caption": "MarkdownRich: Clear Cache", "command": "markdown_rich_clear_cache"},
     {
         "caption": "MarkdownRich: Settings",
         "command": "edit_settings",
