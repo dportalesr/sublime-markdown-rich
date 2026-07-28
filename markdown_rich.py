@@ -514,6 +514,27 @@ def _mmdc_binary():
     return shutil.which("mmdc", path=_mermaid_env()["PATH"])
 
 
+def _run(args, cwd, timeout):
+    """Run a command, returning (exit code, combined output).
+
+    `subprocess.run` only exists from Python 3.5, and Sublime still loads plugins on
+    the 3.3 host unless the package ships a `.python-version`. Popen works on both, so
+    a missing or ignored version file degrades to a slow render rather than a crash.
+
+    :returns: the process exit code and its stdout+stderr, decoded
+    :rtype: tuple
+    """
+    proc = subprocess.Popen(args, cwd=cwd, env=_mermaid_env(),
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        out, _ = proc.communicate()
+        raise RuntimeError("timed out after %ds" % timeout)
+    return proc.returncode, (out or b"").decode("utf-8", "replace")
+
+
 def _mmdc_error(output, returncode):
     """Pick the one useful line out of mermaid-cli's output.
 
@@ -544,14 +565,10 @@ def _mmdc_render(binary, source, dest, opts):
         args = mmdc_args(binary, src_path, out_path, opts["theme"], opts["background"], opts["scale"])
         _log("mermaid-cli: %s", " ".join(args))
         started = time.monotonic()
-        proc = subprocess.run(
-            args, cwd=tmp_dir, env=_mermaid_env(), timeout=120,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        )
-        _log("mermaid-cli exited %d in %s", proc.returncode, _elapsed(started))
-        if proc.returncode != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
-            output = (proc.stdout or b"").decode("utf-8", "replace")
-            raise RuntimeError(_mmdc_error(output, proc.returncode))
+        code, output = _run(args, cwd=tmp_dir, timeout=120)
+        _log("mermaid-cli exited %d in %s", code, _elapsed(started))
+        if code != 0 or not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            raise RuntimeError(_mmdc_error(output, code))
         # Move into the cache only once complete: a render() on another thread must
         # never find a half-written PNG at the path it is about to display.
         _log("mermaid-cli produced %d bytes -> %s", os.path.getsize(out_path), dest)
@@ -570,7 +587,9 @@ def _kroki_render(source, dest, theme):
     endpoint = _settings().get("mermaid_remote_endpoint", "https://kroki.io")
     url = remote_url(endpoint, with_theme_directive(source, theme))
     last = None
-    for attempt in (1, 2):
+    for attempt in (1, 2, 3):
+        if attempt > 1:
+            time.sleep(attempt - 1)   # a moment's pause: kroki 500s are transient
         _log("kroki GET %s/mermaid/png (%d byte payload, attempt %d)",
              endpoint.rstrip("/"), len(url.rsplit("/", 1)[-1]), attempt)
         started = time.monotonic()

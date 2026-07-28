@@ -79,6 +79,12 @@ Generated rules copy the parent's variables, capture numbering and `embed_scope`
 
 Three keys are required in the generated file and none are inherited through `extends`: `name`, `scope` and `version: 2`. Sublime rejects the file outright without them, and the syntax simply never appears in the menu. The scope keeps `text.html.markdown` as its prefix (`text.html.markdown.rich`, the way MultiMarkdown does it) so every selector written against Markdown, including this plugin's and the color scheme's, keeps matching.
 
+## Python host
+
+The package ships a `.python-version` pinning it to Sublime's 3.8 plugin host. Without it, plugins load on the legacy 3.3 host, where `subprocess.run` doesn't exist: every local render fails instantly with `'module' object has no attribute 'run'`, the remote fallback silently does all the work, and the only symptom is diagrams that take seconds and fail whenever the service hiccups.
+
+The subprocess helper uses `Popen` rather than `run` anyway, so a missing or ignored version file costs a slow render instead of a broken one.
+
 ## Caching
 
 Downloads and diagram renders share one directory under the OS temp dir. Renders are written to a temporary file and moved into place, so a partially-written PNG is never displayed. Diagram cache names record the scale they were rendered at, because mermaid-cli honours the configured scale and the remote renderer doesn't; without it, remote diagrams would display at half size.
