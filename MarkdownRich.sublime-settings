@@ -81,9 +81,11 @@
     // "default" for light ones, so diagram text never lands dark-on-dark.
     "mermaid_theme": "auto",
 
-    // Diagram background: "auto" (the color scheme's own background, so the diagram
-    // blends into the editor), a color like "#ffffff", or "transparent".
-    "mermaid_background": "auto",
+    // Diagram background: "transparent" keeps the render's alpha, so it sits on the
+    // editor's own background both inline and in the diagram tab. "auto" bakes in the
+    // color scheme's background instead, which is what you want if you plan to open
+    // the cached PNGs anywhere else. A fixed color like "#ffffff" also works.
+    "mermaid_background": "transparent",
 
     // Device pixel ratio the diagram is rendered at (2 = crisp on retina). The phantom
     // is displayed at 1/scale of the rendered size, so this trades cache size for sharpness.

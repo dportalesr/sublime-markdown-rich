@@ -13,7 +13,7 @@ graph TD;
 
 The ` ```mermaid ` line stays visible as the fold handle, the rest of the block folds away, and the rendered PNG appears below it.
 
-Beside it sits `Open image`, which opens the rendered PNG in its own tab. A phantom is capped to the width of the view, but the image viewer isn't, so a dense diagram can be read at full size or zoomed. It's also the file itself, if you want to save or share it.
+Beside it sits `Open image`, which shows the diagram in its own tab with a `fit / actual size` toggle. Actual size is the size it was rendered at, twice the inline size at the default `mermaid_scale`, and the view scrolls to reach whatever doesn't fit on screen. The block switches to its source at the same time, since the diagram is now in a tab of its own: you end up reading the source and the rendered result side by side instead of two copies of the same picture. The tab is a scratch buffer holding one phantom rather than Sublime's image viewer, which draws a checkerboard behind transparent pixels; this way the diagram sits on the color scheme's background, exactly as it does inline.
 
 The state control is a single inline link at the end of that fence line, in the same spot in every state: it reads `Show source` while the diagram shows, `Show diagram` while the source shows, and carries the error plus a `retry` link when a render failed. Clicking the diagram itself is a shortcut for `Show source`. `MarkdownRich: Toggle mermaid diagrams` flips every block in the view at once.
 
@@ -43,7 +43,7 @@ If diagrams keep coming from Kroki despite mermaid-cli being installed, the bina
 - the background becomes the diagram's background, so the render blends into the editor instead of sitting in a white box
 - the theme becomes `dark` for a dark scheme and `default` for a light one, so diagram text never lands dark-on-dark
 
-Set either to a fixed value to opt out: a mermaid theme name (`"default"`, `"dark"`, `"neutral"`, `"forest"`) and a color or `"transparent"`. Kroki takes no theme flag, so for remote renders the theme is baked into the source as a `%%{init: {"theme": "..."}}%%` directive; a diagram that already carries its own init directive is left alone.
+The background is `"transparent"` by default, so the render keeps its alpha and the editor shows through, inline and in the diagram tab alike. Set it to `"auto"` to bake the color scheme's background into the file instead, which matters only if you open the cached PNGs somewhere else, or to a fixed color. The theme can be pinned to a mermaid theme name (`"default"`, `"dark"`, `"neutral"`, `"forest"`). Kroki takes no theme flag, so for remote renders the theme is baked into the source as a `%%{init: {"theme": "..."}}%%` directive; a diagram that already carries its own init directive is left alone.
 
 ## Caching
 
@@ -68,7 +68,7 @@ Remote renders are retried three times with a short pause between attempts, sinc
 | `mermaid_remote_fallback` | `true`               | Render via Kroki when mermaid-cli is missing or fails (sends the diagram source to the endpoint) |
 | `mermaid_remote_endpoint` | `"https://kroki.io"` | Kroki base url; point it at a self-hosted instance to keep sources internal                      |
 | `mermaid_theme`           | `"auto"`             | `"auto"` follows the color scheme; or `"default"`, `"dark"`, `"neutral"`, `"forest"`             |
-| `mermaid_background`      | `"auto"`             | `"auto"` uses the color scheme's background; or a color, or `"transparent"`                      |
+| `mermaid_background`      | `"transparent"`      | Keeps the render's alpha; `"auto"` bakes in the scheme background, or use a color                |
 | `mermaid_scale`           | `2`                  | Device pixel ratio for local renders (2 = crisp on retina); the phantom displays at 1/scale      |
 | `mermaid_max_width`       | `0.66`               | Inline width: a fraction of the view, pixels above 1, or `0` to fill it                          |
 | `mermaid_min_height`      | `200`                | Smallest height a diagram is drawn at, so wide charts stay legible; `0` disables                 |

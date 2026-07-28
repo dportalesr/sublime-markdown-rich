@@ -578,11 +578,11 @@ def _mmdc_render(binary, source, dest, opts):
 
 
 def _kroki_render(source, dest, theme):
-    """Render `source` via the kroki endpoint. Retries once: kroki 500s are transient.
+    """Render `source` via the kroki endpoint. Retries a few times: 500s are transient.
 
     Kroki takes no theme flag, so the theme rides along inside the diagram source as an
-    init directive. The background stays whatever the theme paints, since there is no
-    knob for it either: a dark theme is legible on a dark editor regardless.
+    init directive. It has no background knob either, and doesn't need one: renders keep
+    their alpha and are shown against the editor's own background.
     """
     endpoint = _settings().get("mermaid_remote_endpoint", "https://kroki.io")
     url = remote_url(endpoint, with_theme_directive(source, theme))
@@ -946,6 +946,109 @@ class PhantomManager:
             self.cycle(int(href[len("mrich:"):]))
 
 
+# --- full-size diagram view ---------------------------------------------------
+
+DIAGRAM_PHANTOM_KEY = "markdown_rich_diagram"
+DIAGRAM_VIEW_STYLE = (
+    '<style>'
+    'body { margin: 0; padding: 12px; }'
+    '.mr-f { color: color(var(--foreground) alpha(0.55)); padding-top: 10px;'
+    ' font-size: 0.85rem; }'
+    '.mr-f a { color: color(var(--foreground) alpha(0.75)); text-decoration: none; }'
+    '.mr-cur { color: var(--foreground); font-weight: bold; }'
+    '</style>'
+)
+
+
+def _view_width(view):
+    """Usable pixel width of a view, or a sane guess when it can't be measured.
+
+    A freshly created view reports a zero-size viewport until Sublime lays it out,
+    which would otherwise fit a diagram to nothing.
+    """
+    width = int(view.viewport_extent()[0]) if view is not None else 0
+    return max(240, width - 40) if width > 100 else 800
+
+
+def _diagram_target(view, path, fit):
+    """Pixel size for the diagram tab: fitted to the view, or the render's own size.
+
+    "Actual size" means the pixels the renderer produced, not those divided by
+    `mermaid_scale`: a 2x render shown at 2x is the sharp, readable one, and dividing
+    would only reproduce what the inline phantom already shows.
+    """
+    natural = _image_size(path)
+    if not natural:
+        return (None, None)
+    if not fit:
+        return natural
+    w, h = natural
+    ratio = min(_view_width(view) / w, 1.0)
+    return (int(w * ratio), int(h * ratio))
+
+
+def _full_diagram_html(view, path, fit):
+    """The diagram, with a size toggle. The dimensions belong to "actual size", so they
+    hang off that label rather than reading as a third option."""
+    w, h = _diagram_target(view, path, fit)
+    natural = _image_size(path) or (0, 0)
+    dims = (' width="%d"' % w if w else "") + (' height="%d"' % h if h else "")
+    labels = []
+    for mode, label in ((True, "fit"), (False, "actual size (%d&#215;%d)" % natural)):
+        if mode == fit:
+            labels.append('<span class="mr-cur">%s</span>' % label)
+        else:
+            labels.append('<a href="%s">%s</a>' % ("fit" if mode else "actual", label))
+    return ('<body>' + DIAGRAM_VIEW_STYLE +
+            '<div><img src="%s"%s></div>'
+            '<div class="mr-f">%s</div></body>'
+            % (_file_src(path), dims, ' &middot; '.join(labels)))
+
+
+def _render_diagram_view(view, path, fit):
+    """(Re)draw the diagram phantom at the requested size.
+
+    Safe to redraw now that the image is embedded rather than loaded: a `file://`
+    image arrives asynchronously, and minihtml fills the gap with its broken-image
+    glyph stretched to the full size of the tag.
+    """
+    settings = view.settings()
+    if settings.get("markdown_rich_diagram_fit") == fit and settings.get("markdown_rich_diagram_id"):
+        return
+    previous = settings.get("markdown_rich_diagram_id")
+    phantom_id = view.add_phantom(
+        DIAGRAM_PHANTOM_KEY, sublime.Region(0), _full_diagram_html(view, path, fit),
+        sublime.LAYOUT_BLOCK,
+        on_navigate=lambda href: _render_diagram_view(view, path, href == "fit"),
+    )
+    if previous:
+        view.erase_phantom_by_id(previous)
+    settings.set("markdown_rich_diagram_id", phantom_id)
+    settings.set("markdown_rich_diagram_fit", fit)
+
+
+def _open_diagram_view(window, path):
+    """A scratch tab showing one diagram, on the editor's own background."""
+    view = window.new_file()
+    view.set_scratch(True)
+    view.set_read_only(True)     # a diagram tab is for looking at, not typing into
+    view.set_name("Diagram")
+    settings = view.settings()
+    for key, value in (("gutter", False), ("line_numbers", False), ("word_wrap", False),
+                       ("draw_indent_guides", False), ("highlight_line", False),
+                       ("scroll_past_end", False), ("draw_white_space", "none")):
+        settings.set(key, value)
+    # Pad once, to the widest the diagram will ever be drawn: phantoms add vertical
+    # layout but no horizontal extent, so a wide image would otherwise be cut off, and
+    # editing the buffer later would disturb the phantom anchored to it.
+    natural = _image_size(path) or (0, 0)
+    em = getattr(view, "em_width", lambda: 8.0)() or 8.0
+    view.run_command("markdown_rich_pad_view", {"columns": int(natural[0] / em) + 2})
+    # The view has no size until Sublime lays it out, so "fit" has to wait for it.
+    sublime.set_timeout(lambda: _render_diagram_view(view, path, fit=True), 50)
+    return view
+
+
 # --- per-view mermaid manager ------------------------------------------------
 
 _mermaid_managers = {}
@@ -1155,10 +1258,12 @@ class MermaidManager:
         self.render()
 
     def open_image(self, key=None):
-        """Open a diagram's PNG in its own tab, for zooming or saving.
+        """Show a diagram full size in its own tab.
 
-        A phantom is capped to the width of the view; the image viewer is not, which
-        is the difference between glancing at a diagram and reading a dense one.
+        Not `open_file`: Sublime's image viewer draws a checkerboard behind transparent
+        pixels, which is exactly what a diagram is made of once the background is left
+        to the editor. A scratch view holding one phantom renders it the same way the
+        inline one does, against the color scheme's background, alpha intact.
         """
         opts = _mermaid_opts(self.view)
         if key is None:
@@ -1174,8 +1279,12 @@ class MermaidManager:
         window = self.view.window()
         if window is None:
             return
-        _log("opening diagram image %s", path)
-        opened = window.open_file(path)
+        _log("opening diagram %s in its own tab: %s", key[:12], path)
+        # The diagram is now in a tab of its own, so the block is more useful showing
+        # its source: the two end up side by side rather than duplicating each other.
+        self.as_source.add(key)
+        self.render()
+        opened = _open_diagram_view(window, path)
         if _settings().get("open_link_side_by_side", True):
             _reveal_beside(window, self.view, opened)
 
@@ -1307,6 +1416,23 @@ class MarkdownRichOpenDiagramCommand(sublime_plugin.TextCommand):
 
     def is_enabled(self):
         return "Markdown" in (self.view.settings().get("syntax") or "")
+
+
+class MarkdownRichPadViewCommand(sublime_plugin.TextCommand):
+    """Widen a diagram view with blank columns, so a full-size image can be scrolled to.
+
+    Only ever appends. Rewriting the whole buffer would edit the text the phantom is
+    anchored to, dropping it mid-redraw, which is what produced a flash of broken
+    image. Leftover width when switching back to a smaller size is just scroll room.
+    """
+
+    def run(self, edit, columns):
+        missing = max(columns, 1) - self.view.size()
+        if missing <= 0:
+            return
+        self.view.set_read_only(False)
+        self.view.insert(edit, self.view.size(), " " * missing)
+        self.view.set_read_only(True)
 
 
 class MarkdownRichToggleDebugCommand(sublime_plugin.ApplicationCommand):

@@ -24,7 +24,7 @@ No preview pane, no split window, no build step. The file you're editing is the 
 
 - **Mermaid blocks render as diagrams** in place of their source, so a document full of charts reads like documentation instead of code
 - **One link flips between diagram and source**, always in the same spot
-- **Open a diagram in its own tab** when it's too dense to read inline, at whatever size you want to zoom to
+- **Open a diagram in its own tab** when it's too dense to read inline, full size, still on your editor's background
 - **Edit in place**: put the cursor in a block to get the source back, move away and the diagram returns
 - **Diagrams match your color scheme**, drawn on the editor's own background in a matching theme
 - **Rendered locally** when mermaid-cli is installed, so nothing you write leaves the machine
@@ -75,7 +75,7 @@ Open any Markdown file and it starts working. For highlighted code fences, pick 
 | click an image              | cycles its size                                          |
 | click a size label          | switches straight to that size                           |
 | click a diagram             | swaps it back to its mermaid source                      |
-| click `Open image` | opens the rendered diagram in its own tab, full size |
+| click `Open image`          | opens the diagram in its own tab, fit or full size       |
 | put the cursor in a diagram | reveals the source to edit; leaving restores the diagram |
 
 ## Commands
@@ -87,7 +87,7 @@ Open any Markdown file and it starts working. For highlighted code fences, pick 
 | `MarkdownRich: Hide inline images`      | Clear them                                                 |
 | `MarkdownRich: Cycle all image sizes`   | Resize every image at once                                 |
 | `MarkdownRich: Toggle mermaid diagrams` | Flip every diagram in the view between chart and source    |
-| `MarkdownRich: Open diagram image` | Open the diagram at the cursor as an image, in its own tab |
+| `MarkdownRich: Open diagram image`      | Open the diagram at the cursor as an image, in its own tab |
 | `MarkdownRich: Clear Cache`             | Re-fetch and re-render everything, after a bad render      |
 | `MarkdownRich: Rebuild Markdown syntax` | Pick up languages installed since the last restart         |
 | `MarkdownRich: Toggle debug logging`    | Report fetches and renders to the console while you work   |

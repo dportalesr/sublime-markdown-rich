@@ -79,6 +79,16 @@ Generated rules copy the parent's variables, capture numbering and `embed_scope`
 
 Three keys are required in the generated file and none are inherited through `extends`: `name`, `scope` and `version: 2`. Sublime rejects the file outright without them, and the syntax simply never appears in the menu. The scope keeps `text.html.markdown` as its prefix (`text.html.markdown.rich`, the way MultiMarkdown does it) so every selector written against Markdown, including this plugin's and the color scheme's, keeps matching.
 
+## The diagram tab
+
+`Open image` doesn't hand the PNG to Sublime's image viewer, which draws a checkerboard behind transparent pixels: a diagram left to blend with the editor is mostly transparent, so it would arrive on a chessboard. Instead the plugin opens a scratch view holding a single phantom, so the image composites over the color scheme's background exactly as the inline one does, and the file keeps its alpha.
+
+Owning the markup means the tab can carry a `fit / actual size` toggle. Redrawing to switch between them re-creates the phantom, image and all.
+
+Scrolling to a diagram wider than the window takes a line of spaces as wide as the image, since phantoms add vertical layout but no horizontal extent. It is written once when the tab opens, sized to the render, so switching size never edits the buffer the phantom is anchored to.
+
+The tab shows one fixed size and never re-renders. minihtml decodes a phantom's image after laying it out, so any redraw flashes the broken-image glyph before the picture arrives; a size toggle was tried and abandoned for exactly that. The view scrolls instead, which needs a line of spaces as wide as the image, since phantoms add vertical layout but no horizontal extent.
+
 ## Python host
 
 The package ships a `.python-version` pinning it to Sublime's 3.8 plugin host. Without it, plugins load on the legacy 3.3 host, where `subprocess.run` doesn't exist: every local render fails instantly with `'module' object has no attribute 'run'`, the remote fallback silently does all the work, and the only symptom is diagrams that take seconds and fail whenever the service hiccups.
