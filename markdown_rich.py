@@ -1178,7 +1178,14 @@ class MermaidManager:
             self.as_source.difference_update(keys)
         self.render()
 
-    def render(self):
+    def render(self, allow_render=True):
+        """Draw the diagrams. `allow_render` gates *starting* new renders.
+
+        Rendering is tied to saving: a diagram costs a subprocess or a network round
+        trip, and rendering every pause in typing spends both on text that is still
+        being written. Moving the caret out of an edited block therefore leaves it
+        showing its source until you save, or until you ask for the diagram directly.
+        """
         view = self.view
         if not _settings().get("render_mermaid", True):
             self.clear()
@@ -1201,6 +1208,10 @@ class MermaidManager:
             if followed or key in self.as_source or key in self._caret_keys:
                 view.unfold(fold)
                 annotations.append('<a href="mmd:img:%s">Show diagram</a>' % key)
+                # Keep the render coming even though the block shows source: the tab
+                # beside it is the whole point of editing this way.
+                if allow_render and followed and _cached_render(key, opts)[0] is None:
+                    self._start_render(b.source, key, opts)
                 continue
             if key in self._failed:
                 view.unfold(fold)
@@ -1211,8 +1222,11 @@ class MermaidManager:
             self._log_block(b, key, path)
             if path is None:
                 view.unfold(fold)
-                annotations.append("&#8987; rendering diagram&#8230;")
-                self._start_render(b.source, key, opts)
+                if allow_render:
+                    annotations.append("&#8987; rendering diagram&#8230;")
+                    self._start_render(b.source, key, opts)
+                else:
+                    annotations.append('<a href="mmd:img:%s">Show diagram</a>' % key)
                 continue
             view.fold(fold)
             annotations.append('<a href="mmd:src:%s">Show source</a> &middot; '
@@ -1261,7 +1275,7 @@ class MermaidManager:
         blocks = self._blocks()
         keys = self._keys_at_caret(blocks, opts)
         if keys != self._caret_keys:
-            self.render()
+            self.render(allow_render=False)
 
     def _blocks(self):
         """Fenced mermaid blocks, re-scanned only when the buffer actually changed.
@@ -1447,9 +1461,6 @@ class MarkdownRichImages(sublime_plugin.ViewEventListener):
         # Section-ref styling tracks edits live (like real link highlighting would).
         # Debounced so a burst of keystrokes only restyles once things settle.
         self._debounce("section", 120, lambda: _style_section_refs(self.view))
-        # Diagrams are re-scanned on a longer delay: an edited block gets a new cache
-        # key, so it re-renders (or reuses an earlier render) once typing pauses.
-        self._debounce("mermaid", 500, lambda: _mermaid(self.view).render())
 
     def on_selection_modified_async(self):
         self._debounce("mermaid_caret", 200, lambda: _mermaid(self.view).sync_caret())
