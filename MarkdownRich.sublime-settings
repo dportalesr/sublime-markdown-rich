@@ -39,6 +39,10 @@
     // Accent color for inline status annotations (loading / not-found / fetch-failed).
     "status_color": "#c0863a",
 
+    // Hovering a §-reference shows the heading it points at, as a clickable link
+    // (no need to place the caret first). Set to false for keyboard-only navigation.
+    "section_ref_popup": true,
+
     // Render ```mermaid fenced blocks as diagrams: the source folds away and the image
     // takes its place. Click the diagram (or its "source" label) to switch back.
     "render_mermaid": true,

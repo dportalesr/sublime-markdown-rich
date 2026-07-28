@@ -209,6 +209,64 @@ def _section_target(view, label):
     return lines[idx] if idx is not None else None
 
 
+def _heading_text(view, region):
+    """Heading line without its `#` markers, e.g. "3.1 Basics"."""
+    return re.sub(r'^\s*#+\s*', '', view.substr(region)).strip()
+
+
+def _goto_region(view, region):
+    """Put the caret at `region` and centre it. Shared by the keymap and the popup."""
+    view.hide_popup()
+    view.sel().clear()
+    view.sel().add(sublime.Region(region.begin()))
+    view.show_at_center(region)
+
+
+_POPUP_STYLE = (
+    '<style>'
+    'body { margin: 0; padding: 6px 10px; font-size: 0.95rem; }'
+    'a { color: var(--bluish); text-decoration: none; }'
+    '.mr-loc { color: color(var(--foreground) alpha(0.55)); }'
+    '.mr-miss { color: color(var(--foreground) alpha(0.6)); }'
+    '</style>'
+)
+
+
+def _section_popup(view, point, label):
+    """Show what a `§N` reference points at, as a clickable link.
+
+    Saves the caret-then-`ctrl+enter` dance for the common case of "where does this
+    go?", and names the destination heading so the answer needs no jump at all.
+    """
+    target = _section_target(view, label)
+    if target is None:
+        body = '<span class="mr-miss">&#167;%s &middot; no such section</span>' % _esc(label)
+    else:
+        # No "§N →" prefix: the reference is right under the cursor already.
+        body = ('<a href="jump">%s</a> <span class="mr-loc">line %d</span>'
+                % (_esc(_heading_text(view, target)), view.rowcol(target.begin())[0] + 1))
+    view.show_popup(
+        '<body>' + _POPUP_STYLE + body + '</body>',
+        flags=sublime.HIDE_ON_MOUSE_MOVE_AWAY,
+        location=point, max_width=720,
+        on_navigate=lambda href: _goto_region(view, target),
+    )
+
+
+# Link-color foreground + underline, no fill/outline (the underline flags require both
+# NO_FILL and NO_OUTLINE). Makes §-refs read as links without owning the syntax.
+_SECTION_DRAW = sublime.DRAW_NO_FILL | sublime.DRAW_NO_OUTLINE | sublime.DRAW_SOLID_UNDERLINE
+
+
+def _style_section_refs(view):
+    """Paint every `§N` ref (outside code) with the color scheme's link style."""
+    regions = [
+        r for r in view.find_all(SECTION_REF_FIND_RE)
+        if not view.match_selector(r.begin(), "markup.raw")
+    ]
+    view.add_regions(SECTION_KEY, regions, "markup.underline.link", flags=_SECTION_DRAW)
+
+
 # --- image dimension probing (no PIL dependency) ----------------------------
 
 def _png_size(d):
@@ -987,6 +1045,19 @@ class MarkdownRichImages(sublime_plugin.ViewEventListener):
         if m.visible:
             m.render()
 
+    def on_hover(self, point, hover_zone):
+        """Preview a §-ref's destination, and offer it as a link (no caret needed)."""
+        if hover_zone != sublime.HOVER_TEXT:
+            return
+        if not _settings().get("section_ref_popup", True):
+            return
+        view = self.view
+        if not view.match_selector(point, MARKDOWN_SELECTOR):
+            return
+        label = _section_ref_at(view, point)
+        if label is not None:
+            _section_popup(view, point, label)
+
     def on_query_context(self, key, operator, operand, match_all):
         """Answer the ctrl+enter keymap: is the caret on a §-ref? (markdown only)."""
         if key != SECTION_CONTEXT_KEY:
@@ -1093,9 +1164,7 @@ class MarkdownRichOpenLinkCommand(sublime_plugin.TextCommand):
         if region is None:
             sublime.status_message("MarkdownRich: no section " + label)
             return
-        view.sel().clear()
-        view.sel().add(sublime.Region(region.begin()))
-        view.show_at_center(region)
+        _goto_region(view, region)
 
     def _open(self, path, line, col, side_by_side):
         window = self.view.window()
