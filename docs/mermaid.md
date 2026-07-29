@@ -62,6 +62,17 @@ The background is `"transparent"` by default, so the render keeps its alpha and 
 
 Set it to `0` to keep mermaid's defaults everywhere, or override one type through `mermaid_config`, which merges on top.
 
+`mermaid_line_height` sets the spacing between the lines of a wrapped label, as a multiple of the font size. Mermaid sets its lines solid (`1`), which reads tight for two-line node labels.
+
+Mermaid has no line-height option, so this is injected as `themeCSS`, and that only reaches diagrams whose labels are HTML:
+
+| Diagram type                                  | Adjustable | Why                                          |
+|-----------------------------------------------|------------|----------------------------------------------|
+| `flowchart`, `class`, `state`, `er`, `block`  | yes        | labels are HTML inside a `foreignObject`     |
+| `sequence`, `timeline`, `gitGraph`, `mindmap` | no         | each line is SVG text placed by a fixed `dy` |
+
+The second row can't be worked around. `dy` is a presentation attribute that Chromium won't take from CSS, mermaid derives it from the font size alone, and a blank line in the label (`<br/> <br/>`) is a parse error. Multi-line labels in those diagrams are as tight as mermaid draws them; the alternatives are a shorter label or a larger `fontSize`, which scales the spacing along with the text.
+
 `mermaid_config` takes mermaid's own configuration, so anything you could write in a `%%{init: ...}%%` directive works as a setting and applies to every diagram. It's merged over the plugin's defaults one level deep, meaning you can set `flowchart.padding` without discarding the other flowchart options.
 
 ```json
@@ -135,12 +146,12 @@ Renders are cached under the OS temp dir (`remote_cache_dirname`), keyed by sour
 
 That key decides which settings cost you a re-render:
 
-| Changing…                                                                                        | Effect                                                |
-|--------------------------------------------------------------------------------------------------|-------------------------------------------------------|
-| `mermaid_theme`, `mermaid_background`, `mermaid_scale`, `mermaid_node_padding`, `mermaid_config` | new key, so every diagram re-renders on its next save |
-| your color scheme (with `"auto"` theme or background)                                            | same, since the resolved values are what get keyed    |
-| `mermaid_max_width`, `mermaid_min_height`                                                        | nothing re-renders; these size an existing image      |
-| `mermaid_css_file`                                                                               | not keyed: run `MarkdownRich: Clear Cache` by hand    |
+| Changing…                                                                                                               | Effect                                                |
+|-------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------|
+| `mermaid_theme`, `mermaid_background`, `mermaid_scale`, `mermaid_node_padding`, `mermaid_line_height`, `mermaid_config` | new key, so every diagram re-renders on its next save |
+| your color scheme (with `"auto"` theme or background)                                                                   | same, since the resolved values are what get keyed    |
+| `mermaid_max_width`, `mermaid_min_height`                                                                               | nothing re-renders; these size an existing image      |
+| `mermaid_css_file`                                                                                                      | not keyed: run `MarkdownRich: Clear Cache` by hand    |
 
 `mermaid_scale` is the one with a real trade-off: it multiplies the pixels rendered, so 2 buys a sharp diagram in the tab and on retina displays, and costs roughly four times the cache size of 1.
 
@@ -163,6 +174,7 @@ Remote renders are retried three times with a short pause between attempts, sinc
 | `mermaid_remote_fallback` | `true`               | Render via Kroki when mermaid-cli is missing or fails (sends the diagram source to the endpoint) |
 | `mermaid_remote_endpoint` | `"https://kroki.io"` | Kroki base url; point it at a self-hosted instance to keep sources internal                      |
 | `mermaid_node_padding`    | `16`                 | Space between a node's text and its border, across every type that supports one                  |
+| `mermaid_line_height`     | `1.4`                | Line spacing inside wrapped labels, where mermaid renders them as HTML                           |
 | `mermaid_config`          | `{}`                 | Mermaid's own configuration (padding, spacing, fonts), merged over the plugin defaults           |
 | `mermaid_css_file`        | `""`                 | CSS file applied to the rendered page; local renders only                                        |
 | `mermaid_theme`           | `"auto"`             | `"auto"` follows the color scheme; or `"default"`, `"dark"`, `"neutral"`, `"forest"`             |

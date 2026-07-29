@@ -91,6 +91,11 @@
     // supports one. 0 keeps mermaid's own defaults. See docs/mermaid.md for the list.
     "mermaid_node_padding": 16,
 
+    // Spacing between the lines of a wrapped label, as a multiple of the font size.
+    // 1 is mermaid's own spacing, which sets lines solid. Only reaches diagrams whose
+    // labels are HTML; see docs/mermaid.md for which those are.
+    "mermaid_line_height": 1.4,
+
     // Mermaid's own config, merged over the above one level deep. Anything valid in a
     // %%{init: ...}%% directive works, e.g.
     //   {"fontFamily": "Menlo", "flowchart": {"nodeSpacing": 60, "curve": "basis"}}

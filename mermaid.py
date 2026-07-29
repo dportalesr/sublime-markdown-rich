@@ -192,6 +192,31 @@ NODE_PADDING_KEYS = {
 }
 
 
+#: Elements mermaid puts a wrapped label's lines in, when it renders them as HTML.
+#: Diagrams that draw labels as SVG text instead (sequence, timeline, gitGraph) place
+#: each line with a fixed `dy`, which no stylesheet can move.
+_LABEL_SELECTORS = (
+    "foreignObject div", "foreignObject p", "foreignObject span",
+    ".nodeLabel", ".nodeLabel p", ".edgeLabel", ".edgeLabel p", ".label div",
+)
+
+
+def line_height_css(line_height):
+    """CSS setting the spacing between the lines of a wrapped label.
+
+    Mermaid has no line-height option, so this goes in as ``themeCSS``. It only
+    reaches diagrams whose labels are HTML; the rest position each line with an
+    attribute that CSS cannot override.
+
+    :param line_height: multiple of the font size, or 0/1/None to leave it alone
+    :returns: a CSS rule, or the empty string when there is nothing to change
+    :rtype: str
+    """
+    if not line_height or line_height == 1:
+        return ""
+    return "%s { line-height: %s !important; }" % (", ".join(_LABEL_SELECTORS), line_height)
+
+
 def node_padding_config(padding):
     """Mermaid config setting node padding across every type that honours one.
 

@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
                      luminance, auto_theme, with_init_directive, block_at, width_budget,
-                     merged_config, node_padding_config)
+                     merged_config, node_padding_config, line_height_css)
 
 
 def _doc(*lines):
@@ -290,6 +290,19 @@ def test_node_padding_config_user_can_override_one_type():
     out = merged_config({"flowchart": {"padding": 2}}, node_padding_config(16))
     assert out["flowchart"]["padding"] == 2
     assert out["class"]["padding"] == 16
+
+
+# --- line_height_css: spacing between wrapped label lines --------------------
+
+def test_line_height_css_targets_html_labels():
+    css = line_height_css(1.5)
+    assert "line-height: 1.5" in css
+    assert "foreignObject" in css      # where mermaid puts HTML labels
+
+
+def test_line_height_css_disabled():
+    assert line_height_css(0) == ""
+    assert line_height_css(1) == ""     # 1 is mermaid's own spacing
 
 
 # --- theme selection: match the diagram to the color scheme -----------------

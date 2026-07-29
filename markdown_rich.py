@@ -24,7 +24,7 @@ try:
     from .section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
     from .mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
                           auto_theme, with_init_directive, block_at, width_budget,
-                          merged_config, node_padding_config)
+                          merged_config, node_padding_config, line_height_css)
     from .markdown_syntax import (Entry, embedded_scopes, extensions_of, fence_tokens,
                                   assign_tokens, render_syntax, is_covered,
                                   drop_specializations, covered_scopes)
@@ -32,7 +32,7 @@ except (ImportError, ValueError, SystemError):
     from section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
     from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
                          auto_theme, with_init_directive, block_at, width_budget,
-                         merged_config, node_padding_config)
+                         merged_config, node_padding_config, line_height_css)
     from markdown_syntax import (Entry, embedded_scopes, extensions_of, fence_tokens,
                                  assign_tokens, render_syntax, is_covered,
                                  drop_specializations, covered_scopes)
@@ -500,6 +500,9 @@ def _mermaid_config():
     """
     s = _settings()
     base = node_padding_config(s.get("mermaid_node_padding", 16))
+    css = line_height_css(s.get("mermaid_line_height", 1.4))
+    if css:
+        base["themeCSS"] = css
     return merged_config(s.get("mermaid_config") or {}, base)
 
 
