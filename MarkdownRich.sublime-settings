@@ -1,126 +1,108 @@
+// Full documentation: https://github.com/dportalesr/sublime-markdown-rich
+// Mermaid options in detail: docs/mermaid.md
 {
-    // Render inline image phantoms automatically when a Markdown file loads.
+    // --- images -------------------------------------------------------------
+
+    // Render images automatically when a Markdown file loads.
     "auto_show_on_load": true,
 
-    // Size each image renders at initially: "thumbnail", "medium", or "original".
+    // Size images start at: "thumbnail", "medium", or "original".
     "default_size": "thumbnail",
 
-    // Download and render remote http(s) images (cached under the OS temp dir).
+    // Download and render remote http(s) images.
     "render_remote": true,
 
-    // Thumbnail state: longest side capped to this many pixels (initial state).
+    // Thumbnail size: longest side capped to this many pixels.
     "thumbnail_width": 180,
 
-    // Medium state: image scaled to fit within these bounds.
+    // Medium size: scaled to fit within these bounds.
     "max_image_width": 800,
     "max_image_height": 600,
 
-    // Drop the "medium" option when its width is within this fraction of the original's
-    // (same aspect ratio, so width decides). 0.1 = hide medium if it's >=90% of original width,
-    // leaving a thumbnail <-> original toggle. Set to 0 to always show all three.
+    // Drop "medium" when its width is within this fraction of the original. 0 keeps all three.
     "medium_merge_threshold": 0.1,
 
     // Extensions treated as images (svg excluded: minihtml can't render it).
     "image_extensions": [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"],
 
-    // Cache folder name (under the OS temp dir) for downloaded remote images.
+    // Cache folder name, under the OS temp dir, for downloads and diagram renders.
     "remote_cache_dirname": "SublimeMarkdownRich",
 
-    // GitHub token for private-repo images (PR descriptions, user-attachments).
-    // Sent as "Authorization: Bearer <token>" ONLY to github.com / *.githubusercontent.com,
-    // and dropped on cross-host redirects (e.g. the signed S3 URL it forwards to).
-    // A fine-grained token with "Contents: read" on the repo is enough.
+    // Token for private GitHub images. Sent only to github.com / *.githubusercontent.com,
+    // and dropped on cross-host redirects. "Contents: read" is enough.
     "github_token": "",
 
-    // Preferred for security: read the token from a file OUTSIDE iCloud-synced User settings.
-    // e.g. "~/.config/markdown_rich/github_token". Used only when github_token above is empty.
+    // Read that token from a file instead, kept outside synced settings. Wins over github_token.
     "github_token_file": "",
 
-    // Accent color for inline status annotations (loading / not-found / fetch-failed).
+    // Accent color for the inline loading / missing / failed notes.
     "status_color": "#c0863a",
 
-    // Hovering a §-reference shows the heading it points at, as a clickable link
-    // (no need to place the caret first). Set to false for keyboard-only navigation.
+    // --- links and navigation -----------------------------------------------
+
+    // Open file links beside the Markdown, by selecting both sheets in the same group.
+    // Local files only, and sheet selection needs build 4050+.
+    "open_link_side_by_side": true,
+
+    // Hovering a §-reference previews the heading it points at, as a clickable link.
     "section_ref_popup": true,
 
-    // Log resource work to the Sublime console: image downloads, diagram renders,
-    // which backend ran, how long it took, and the cache key each block resolved to.
-    // Useful when a render seems stuck or an edit doesn't appear to take effect.
-    // Toggle it from the palette with "MarkdownRich: Toggle debug logging".
-    "debug": false,
+    // --- syntax -------------------------------------------------------------
 
-    // Keep a generated "MarkdownRich" Markdown syntax in sync with the syntaxes you have
-    // installed, so fenced code blocks highlight for languages Sublime's own Markdown
-    // syntax doesn't cover (mermaid, d2, ...). Written to Packages/User, rebuilt on load
-    // and via "MarkdownRich: Rebuild Markdown syntax". Select it per file, or make it the
-    // default with "Open all with current extension as...".
+    // Generate a "MarkdownRich" syntax that highlights fenced code for every installed
+    // language, not just the ones Sublime's Markdown covers. Written to Packages/User.
     "generate_markdown_syntax": true,
 
-    // Syntax the generated one inherits from. The default adds fenced languages to
-    // plain Markdown; point it at "Packages/Markdown/MultiMarkdown.sublime-syntax" to
-    // keep MultiMarkdown's metadata block as well.
+    // Syntax it inherits from. MultiMarkdown's keeps its metadata block as well.
     "markdown_syntax_parent": "Packages/Markdown/Markdown.sublime-syntax",
 
-    // Render ```mermaid fenced blocks as diagrams: the source folds away and the image
-    // takes its place. Click the diagram (or its "source" label) to switch back.
+    // --- mermaid diagrams ---------------------------------------------------
+
+    // Fold ```mermaid blocks and render the diagram in their place.
     "render_mermaid": true,
 
-    // Path to the mermaid-cli binary. Empty = look for "mmdc" on PATH (extended with
-    // homebrew / asdf / volta / nvm bin dirs, since GUI apps don't inherit a login PATH).
-    // Set this when the diagram falls back to the remote renderer unexpectedly.
+    // Path to the mermaid-cli binary. Empty looks for "mmdc" on PATH, extended with the
+    // homebrew / asdf / volta / nvm bin dirs a GUI app doesn't inherit.
     "mermaid_cli_path": "",
 
-    // When mermaid-cli is missing or fails, render via a Kroki server instead.
-    // NOTE: this sends the diagram source to the endpoint below. Set to false to keep
-    // rendering strictly local, or point the endpoint at a self-hosted Kroki instance.
+    // Fall back to a Kroki server when mermaid-cli is missing or fails.
+    // NOTE: this sends the diagram source to the endpoint below.
     "mermaid_remote_fallback": true,
     "mermaid_remote_endpoint": "https://kroki.io",
 
-    // Mermaid theme: "auto", "default", "dark", "neutral", or "forest".
-    // "auto" reads the color scheme's background and picks "dark" for dark schemes,
-    // "default" for light ones, so diagram text never lands dark-on-dark.
+    // "auto" follows the color scheme, so dark schemes get mermaid's dark theme.
+    // Otherwise: "default", "dark", "neutral", "forest".
     "mermaid_theme": "auto",
 
-    // Diagram background: "transparent" keeps the render's alpha, so it sits on the
-    // editor's own background both inline and in the diagram tab. "auto" bakes in the
-    // color scheme's background instead, which is what you want if you plan to open
-    // the cached PNGs anywhere else. A fixed color like "#ffffff" also works.
+    // "transparent" keeps the render's alpha, so the editor shows through. "auto" bakes
+    // in the color scheme's background, for opening the cached PNGs elsewhere.
     "mermaid_background": "transparent",
 
-    // Device pixel ratio the diagram is rendered at (2 = crisp on retina). The phantom
-    // is displayed at 1/scale of the rendered size, so this trades cache size for sharpness.
+    // Device pixel ratio to render at. 2 is crisp on retina and is what "Open image" shows.
     "mermaid_scale": 2,
 
-    // Padding between a node's text and its border, applied to every diagram type that
-    // supports one. Mermaid has no global setting for it and names the key differently
-    // per type, so the plugin spreads one value across all of them. 0 keeps mermaid's
-    // own defaults; override a single type through mermaid_config below.
+    // Inline width: a fraction of the view, pixels above 1, or 0 to fill it.
+    "mermaid_max_width": 0.66,
+
+    // Smallest height a diagram is drawn at, so wide flowcharts stay legible. 0 disables.
+    "mermaid_min_height": 200,
+
+    // Space between a node's text and its border, across every diagram type that
+    // supports one. 0 keeps mermaid's own defaults. See docs/mermaid.md for the list.
     "mermaid_node_padding": 16,
 
-    // Mermaid's own configuration, merged over the above one level deep. Anything valid
-    // in a %%{init: ...}%% directive works here, and a diagram carrying its own init
-    // directive overrides all of it. See docs/mermaid.md for the options.
+    // Mermaid's own config, merged over the above one level deep. Anything valid in a
+    // %%{init: ...}%% directive works, e.g.
+    //   {"fontFamily": "Menlo", "flowchart": {"nodeSpacing": 60, "curve": "basis"}}
     "mermaid_config": {},
 
-    // A CSS file applied to the rendered page, for anything the config can't express.
+    // CSS file applied to the rendered page, for what the config can't express.
     // Local renders only. e.g. "~/.config/markdown_rich/mermaid.css"
     "mermaid_css_file": "",
 
-    // How wide the inline diagram may be drawn (after undoing mermaid_scale).
-    // A fraction (0 < n <= 1) is relative to the view, whole numbers are pixels, and
-    // 0 fills the view. The default keeps the diagram a readable preview; "Open image"
-    // on the fence line shows the full render in its own tab for the dense ones.
-    "mermaid_max_width": 0.66,
+    // --- troubleshooting ----------------------------------------------------
 
-    // Smallest height a diagram is drawn at. A left-to-right flowchart is wide and
-    // shallow, so fitting its width alone can leave the labels unreadable; this grows
-    // it back until it is this tall, without exceeding the width or the rendered
-    // resolution. Set to 0 to let diagrams be as short as they come out.
-    "mermaid_min_height": 200,
-
-    // Open file links (ctrl+enter / triple-click) beside the origin Markdown: the
-    // opened file is placed in the same group and both sheets are selected, so
-    // Sublime tiles them side-by-side without changing the window layout. Only
-    // affects local file links, not http(s). (Sheet selection needs build 4050+.)
-    "open_link_side_by_side": true
+    // Log fetches and renders to the console: backend, timing, cache keys.
+    // Toggle from the palette with "MarkdownRich: Toggle debug logging".
+    "debug": false
 }
