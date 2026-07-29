@@ -49,9 +49,100 @@ If diagrams keep coming from Kroki despite mermaid-cli being installed, the bina
 
 The background is `"transparent"` by default, so the render keeps its alpha and the editor shows through, inline and in the diagram tab alike. Set it to `"auto"` to bake the color scheme's background into the file instead, which matters only if you open the cached PNGs somewhere else, or to a fixed color. The theme can be pinned to a mermaid theme name (`"default"`, `"dark"`, `"neutral"`, `"forest"`). Kroki takes no theme flag, so for remote renders the theme is baked into the source as a `%%{init: {"theme": "..."}}%%` directive; a diagram that already carries its own init directive is left alone.
 
+## Configuring mermaid
+
+`mermaid_node_padding` sets the space between a node's text and its border. Mermaid has no global setting for it and names the key differently per diagram type, so the plugin spreads one value across every type that honours one, and its defaults leave label text touching the box edge.
+
+| Diagram type                                                          | Honours it | Key it uses                  |
+|-----------------------------------------------------------------------|------------|------------------------------|
+| `flowchart`, `class`, `mindmap`, `block`, `timeline`                  | yes        | `padding`                    |
+| `sequence`                                                            | yes        | `wrapPadding`                |
+| `C4`                                                                  | yes        | `c4ShapePadding`             |
+| `state`, `requirement`, `kanban`, `architecture`, `packet`, `journey` | no         | ignores its own padding keys |
+
+Set it to `0` to keep mermaid's defaults everywhere, or override one type through `mermaid_config`, which merges on top.
+
+`mermaid_config` takes mermaid's own configuration, so anything you could write in a `%%{init: ...}%%` directive works as a setting and applies to every diagram. It's merged over the plugin's defaults one level deep, meaning you can set `flowchart.padding` without discarding the other flowchart options.
+
+```json
+{
+    "mermaid_config": {
+        "fontFamily": "Menlo, monospace",
+        "flowchart": {"padding": 20, "nodeSpacing": 60, "rankSpacing": 60, "curve": "basis"},
+        "sequence": {"actorMargin": 60, "messageMargin": 40, "boxMargin": 12},
+        "er": {"entityPadding": 15, "minEntityWidth": 100}
+    }
+}
+```
+
+The options worth knowing:
+
+**Global**
+
+| Option           | Effect                                              |
+|------------------|-----------------------------------------------------|
+| `fontFamily`     | Font for every label                                |
+| `fontSize`       | Base font size                                      |
+| `look`           | `classic`, or `handDrawn` for a sketched style      |
+| `themeVariables` | Individual theme colors, e.g. `{"primaryColor": …}` |
+| `themeCSS`       | CSS injected into the diagram's own stylesheet      |
+
+**`flowchart`**
+
+| Option           | Effect                                            |
+|------------------|---------------------------------------------------|
+| `padding`        | Space inside a node, around its text              |
+| `nodeSpacing`    | Gap between nodes on the same rank                |
+| `rankSpacing`    | Gap between ranks                                 |
+| `diagramPadding` | Margin around the whole diagram                   |
+| `curve`          | Edge shape: `basis`, `linear`, `cardinal`, `step` |
+| `wrappingWidth`  | Width at which label text wraps                   |
+| `htmlLabels`     | Render labels as HTML, off for plain SVG text     |
+
+**`sequence`**
+
+| Option                              | Effect                                      |
+|-------------------------------------|---------------------------------------------|
+| `wrapPadding`                       | Space inside a participant box              |
+| `actorMargin`                       | Horizontal gap between participants         |
+| `messageMargin`                     | Vertical gap between messages               |
+| `boxMargin`                         | Padding inside `loop` / `alt` / `opt` boxes |
+| `noteMargin`                        | Padding inside notes                        |
+| `diagramMarginX` / `diagramMarginY` | Margin around the diagram                   |
+| `width` / `height`                  | Minimum participant box size                |
+| `wrap`                              | Wrap long message text                      |
+
+**Other types**
+
+| Type    | Options                                                                                               |
+|---------|-------------------------------------------------------------------------------------------------------|
+| `gantt` | `barHeight`, `barGap`, `topPadding`, `leftPadding`, `gridLineStartPadding`                            |
+| `class` | `padding`, `textHeight`, `diagramPadding`                                                             |
+| `er`    | `minEntityWidth`, `minEntityHeight`, `diagramPadding`, `layoutDirection` (`entityPadding` is ignored) |
+| `pie`   | `textPosition`, `useWidth`                                                                            |
+
+Mermaid's full list is larger; consult [its configuration docs](https://mermaid.js.org/config/schema-docs/config.html) for the rest.
+
+Both renderers honour the config: a local render gets it as a JSON file (`mmdc -c`), and a remote one gets it folded into the diagram source as an init directive, since Kroki takes no config file. A diagram carrying its own `%%{init: ...}%%` overrides everything here, since the author was being specific on purpose.
+
+`mermaid_css_file` points at a CSS file applied to the rendered page (`mmdc -C`), for what the config can't express. Local renders only, since the remote renderer has no equivalent.
+
+Changing either setting changes the cache key, so every diagram re-renders on its next save.
+
 ## Caching
 
-Renders are cached under the OS temp dir (`remote_cache_dirname`), keyed by source + theme + background + scale, so a diagram is rendered once and then loads instantly, and changing the color scheme re-renders it.
+Renders are cached under the OS temp dir (`remote_cache_dirname`), keyed by source, theme, background, scale and config, so a diagram is rendered once and then loads instantly.
+
+That key decides which settings cost you a re-render:
+
+| Changing…                                                                                        | Effect                                                |
+|--------------------------------------------------------------------------------------------------|-------------------------------------------------------|
+| `mermaid_theme`, `mermaid_background`, `mermaid_scale`, `mermaid_node_padding`, `mermaid_config` | new key, so every diagram re-renders on its next save |
+| your color scheme (with `"auto"` theme or background)                                            | same, since the resolved values are what get keyed    |
+| `mermaid_max_width`, `mermaid_min_height`                                                        | nothing re-renders; these size an existing image      |
+| `mermaid_css_file`                                                                               | not keyed: run `MarkdownRich: Clear Cache` by hand    |
+
+`mermaid_scale` is the one with a real trade-off: it multiplies the pixels rendered, so 2 buys a sharp diagram in the tab and on retina displays, and costs roughly four times the cache size of 1.
 
 ## Sizing
 
@@ -71,6 +162,9 @@ Remote renders are retried three times with a short pause between attempts, sinc
 | `mermaid_cli_path`        | `""`                 | Path to the `mmdc` binary; empty looks for `mmdc` on the extended `PATH`                         |
 | `mermaid_remote_fallback` | `true`               | Render via Kroki when mermaid-cli is missing or fails (sends the diagram source to the endpoint) |
 | `mermaid_remote_endpoint` | `"https://kroki.io"` | Kroki base url; point it at a self-hosted instance to keep sources internal                      |
+| `mermaid_node_padding`    | `16`                 | Space between a node's text and its border, across every type that supports one                  |
+| `mermaid_config`          | `{}`                 | Mermaid's own configuration (padding, spacing, fonts), merged over the plugin defaults           |
+| `mermaid_css_file`        | `""`                 | CSS file applied to the rendered page; local renders only                                        |
 | `mermaid_theme`           | `"auto"`             | `"auto"` follows the color scheme; or `"default"`, `"dark"`, `"neutral"`, `"forest"`             |
 | `mermaid_background`      | `"transparent"`      | Keeps the render's alpha; `"auto"` bakes in the scheme background, or use a color                |
 | `mermaid_scale`           | `2`                  | Device pixel ratio for local renders (2 = crisp on retina); the phantom displays at 1/scale      |

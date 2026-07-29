@@ -7,6 +7,7 @@ supplies the view/phantom/fold plumbing and the threads around them.
 
 import base64
 import collections
+import json
 import hashlib
 import re
 import zlib
@@ -81,17 +82,19 @@ def block_at(blocks, point):
     return None
 
 
-def cache_key(source, theme, background, scale):
+def cache_key(source, theme, background, scale, config=None):
     """Content address for a rendered diagram: same inputs, same PNG.
 
     :param str source: diagram text
     :param str theme: mermaid theme name
     :param str background: background color passed to the renderer
     :param scale: device pixel ratio the diagram is rendered at
+    :param config: mermaid config dict, which changes the render like any other input
     :returns: hex digest usable as a filename stem
     :rtype: str
     """
-    payload = "\x00".join([source, theme, background, str(scale)])
+    payload = "\x00".join([source, theme, background, str(scale),
+                           json.dumps(config or {}, sort_keys=True)])
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
@@ -107,7 +110,8 @@ def remote_url(endpoint, source):
     return "%s/mermaid/png/%s" % (endpoint.rstrip("/"), payload)
 
 
-def mmdc_args(binary, in_path, out_path, theme, background, scale, width=None):
+def mmdc_args(binary, in_path, out_path, theme, background, scale, width=None,
+              config_path=None, css_path=None):
     """Argument vector for a local mermaid-cli render.
 
     :param str binary: path to (or name of) the ``mmdc`` executable
@@ -117,6 +121,8 @@ def mmdc_args(binary, in_path, out_path, theme, background, scale, width=None):
     :param str background: background color (``transparent``, ``white``, ...)
     :param scale: device pixel ratio to render at
     :param width: optional pixel width passed to mermaid-cli
+    :param config_path: optional mermaid JSON config file
+    :param css_path: optional CSS file applied to the rendered page
     :returns: argv list for ``subprocess``
     :rtype: list
     """
@@ -124,6 +130,10 @@ def mmdc_args(binary, in_path, out_path, theme, background, scale, width=None):
             "-t", str(theme), "-b", str(background), "-s", str(scale)]
     if width:
         args += ["-w", str(width)]
+    if config_path:
+        args += ["-c", config_path]
+    if css_path:
+        args += ["-C", css_path]
     return args
 
 
@@ -166,21 +176,78 @@ def auto_theme(background):
     return "dark" if lum is not None and lum < 0.5 else "default"
 
 
-def with_theme_directive(source, theme):
-    """Bake ``theme`` into the diagram source with a ``%%{init}%%`` directive.
+#: Where each diagram type keeps its node padding. Mermaid has no global setting for
+#: it, and the key differs per type, so one padding setting has to be spread by hand.
+#: Established by rendering each type with and without the key and comparing: types
+#: that ignore every padding key they declare (state, requirement, kanban,
+#: architecture, packet, journey, er entities) are deliberately absent.
+NODE_PADDING_KEYS = {
+    "flowchart": "padding",
+    "sequence": "wrapPadding",      # padding inside participant boxes
+    "class": "padding",
+    "mindmap": "padding",
+    "block": "padding",
+    "timeline": "padding",
+    "c4": "c4ShapePadding",
+}
 
-    Needed for renderers driven purely by the source (kroki has no theme flag). A
-    source that already carries its own init directive is left untouched, as is the
-    ``default`` theme, which is what mermaid picks anyway.
+
+def node_padding_config(padding):
+    """Mermaid config setting node padding across every type that honours one.
+
+    :param padding: pixels of padding, or 0/None to leave every default alone
+    :returns: config to merge under the user's own
+    :rtype: dict
+    """
+    if not padding:
+        return {}
+    return {diagram: {key: padding} for diagram, key in NODE_PADDING_KEYS.items()}
+
+
+def merged_config(user, defaults=None):
+    """User mermaid config over ``defaults``, merged one level deep.
+
+    One level is enough: mermaid's config is a flat map of diagram types to their
+    options, so merging per type lets a user set ``flowchart.padding`` without
+    discarding the rest of the flowchart defaults. Neither input is modified.
+
+    :param user: config from the user's settings, or None
+    :param defaults: config to merge underneath it, or None
+    :returns: the combined config
+    :rtype: dict
+    """
+    out = {k: dict(v) if isinstance(v, dict) else v for k, v in (defaults or {}).items()}
+    for key, value in (user or {}).items():
+        if isinstance(value, dict) and isinstance(out.get(key), dict):
+            out[key].update(value)
+        else:
+            out[key] = value
+    return out
+
+
+def with_init_directive(source, theme, config):
+    """Bake ``theme`` and ``config`` into the source with a ``%%{init}%%`` directive.
+
+    Needed for renderers driven purely by the source: kroki takes neither a theme flag
+    nor a config file, so anything mermaid should know has to travel inside the
+    diagram. A source carrying its own init directive is left alone, since the author
+    was being specific on purpose.
 
     :param str source: diagram text
-    :param str theme: mermaid theme name
-    :returns: source, prefixed with an init directive when one is warranted
+    :param str theme: mermaid theme name, or ``"default"`` to leave it out
+    :param config: mermaid config dict, or None
+    :returns: source, prefixed with an init directive when there is anything to say
     :rtype: str
     """
-    if theme == "default" or source.lstrip().startswith("%%{"):
+    if source.lstrip().startswith("%%{"):
         return source
-    return '%%{init: {"theme": "' + theme + '"}}%%\n' + source
+    settings = dict(config or {})
+    if theme and theme != "default":
+        settings["theme"] = theme
+    if not settings:
+        return source
+    # sort_keys so the directive (and the cache key built from it) is stable.
+    return "%%{init: " + json.dumps(settings, sort_keys=True) + "}%%\n" + source
 
 
 #: Width assumed when the view can't be measured (headless calls, tests).

@@ -4,6 +4,7 @@ import os
 import re
 import base64
 import hashlib
+import json
 import shutil
 import subprocess
 import tempfile
@@ -22,14 +23,16 @@ import sublime_plugin
 try:
     from .section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
     from .mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
-                          auto_theme, with_theme_directive, block_at, width_budget)
+                          auto_theme, with_init_directive, block_at, width_budget,
+                          merged_config, node_padding_config)
     from .markdown_syntax import (Entry, embedded_scopes, extensions_of, fence_tokens,
                                   assign_tokens, render_syntax, is_covered,
                                   drop_specializations, covered_scopes)
 except (ImportError, ValueError, SystemError):
     from section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
     from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
-                         auto_theme, with_theme_directive, block_at, width_budget)
+                         auto_theme, with_init_directive, block_at, width_budget,
+                         merged_config, node_padding_config)
     from markdown_syntax import (Entry, embedded_scopes, extensions_of, fence_tokens,
                                  assign_tokens, render_syntax, is_covered,
                                  drop_specializations, covered_scopes)
@@ -488,6 +491,18 @@ def _display_width(view):
     return width_budget(_settings().get("mermaid_max_width", 0.66), usable)
 
 
+def _mermaid_config():
+    """Mermaid config for renders: the user's settings over the padding default.
+
+    `mermaid_node_padding` is spread across every diagram type that honours one,
+    because mermaid has no global setting for it and names the key differently per
+    type. `mermaid_config` merges on top, so overriding one type keeps the rest.
+    """
+    s = _settings()
+    base = node_padding_config(s.get("mermaid_node_padding", 16))
+    return merged_config(s.get("mermaid_config") or {}, base)
+
+
 def _mermaid_opts(view=None):
     """Render options that also key the cache: theme, background, scale, display cap.
 
@@ -511,11 +526,13 @@ def _mermaid_opts(view=None):
         "scale": s.get("mermaid_scale", 2),
         "max_width": _display_width(view),
         "min_height": s.get("mermaid_min_height", 200),
+        "config": _mermaid_config(),
     }
 
 
 def _mermaid_key(source, opts):
-    return cache_key(source, opts["theme"], opts["background"], opts["scale"])
+    return cache_key(source, opts["theme"], opts["background"], opts["scale"],
+                     opts.get("config"))
 
 
 def _mermaid_path(key, scale):
@@ -596,7 +613,17 @@ def _mmdc_render(binary, source, dest, opts):
     try:
         with open(src_path, "w", encoding="utf-8") as f:
             f.write(source)
-        args = mmdc_args(binary, src_path, out_path, opts["theme"], opts["background"], opts["scale"])
+        config_path = None
+        if opts.get("config"):
+            config_path = os.path.join(tmp_dir, "config.json")
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(opts["config"], f)
+        css_path = os.path.expanduser(_settings().get("mermaid_css_file", "") or "") or None
+        if css_path and not os.path.exists(css_path):
+            _log("mermaid_css_file not found, ignoring: %s", css_path)
+            css_path = None
+        args = mmdc_args(binary, src_path, out_path, opts["theme"], opts["background"],
+                         opts["scale"], config_path=config_path, css_path=css_path)
         _log("mermaid-cli: %s", " ".join(args))
         started = time.monotonic()
         code, output = _run(args, cwd=tmp_dir, timeout=120)
@@ -611,7 +638,7 @@ def _mmdc_render(binary, source, dest, opts):
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-def _kroki_render(source, dest, theme):
+def _kroki_render(source, dest, theme, config=None):
     """Render `source` via the kroki endpoint. Retries a few times: 500s are transient.
 
     Kroki takes no theme flag, so the theme rides along inside the diagram source as an
@@ -619,7 +646,7 @@ def _kroki_render(source, dest, theme):
     their alpha and are shown against the editor's own background.
     """
     endpoint = _settings().get("mermaid_remote_endpoint", "https://kroki.io")
-    url = remote_url(endpoint, with_theme_directive(source, theme))
+    url = remote_url(endpoint, with_init_directive(source, theme, config))
     last = None
     for attempt in (1, 2, 3):
         if attempt > 1:
@@ -669,7 +696,7 @@ def _render_mermaid(source, key, opts):
         problems.append("mermaid-cli not found")
     if _settings().get("mermaid_remote_fallback", True):
         try:
-            _kroki_render(source, _mermaid_path(key, 1), opts["theme"])
+            _kroki_render(source, _mermaid_path(key, 1), opts["theme"], opts.get("config"))
             return
         except Exception as e:
             problems.append("remote render: %s" % e)

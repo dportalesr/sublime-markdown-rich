@@ -12,7 +12,8 @@ import zlib
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
-                     luminance, auto_theme, with_theme_directive, block_at, width_budget)
+                     luminance, auto_theme, with_init_directive, block_at, width_budget,
+                     merged_config, node_padding_config)
 
 
 def _doc(*lines):
@@ -131,6 +132,8 @@ def test_cache_key_varies_with_source_and_options():
     assert cache_key("graph TD; A-->B;", theme="dark", background="transparent", scale=2) != base
     assert cache_key("graph TD; A-->B;", theme="default", background="white", scale=2) != base
     assert cache_key("graph TD; A-->B;", theme="default", background="transparent", scale=3) != base
+    assert cache_key("graph TD; A-->B;", theme="default", background="transparent", scale=2,
+                     config={"flowchart": {"padding": 20}}) != base
 
 
 # --- remote_url: kroki-style deflate + base64url GET ------------------------
@@ -171,6 +174,15 @@ def test_mmdc_args_width_optional():
     assert "-w" not in without
     with_w = mmdc_args("mmdc", "i", "o", theme="default", background="white", scale=1, width=900)
     assert with_w[with_w.index("-w") + 1] == "900"
+
+
+def test_mmdc_args_config_and_css_optional():
+    bare = mmdc_args("mmdc", "i", "o", theme="default", background="white", scale=1)
+    assert "-c" not in bare and "-C" not in bare
+    full = mmdc_args("mmdc", "i", "o", theme="default", background="white", scale=1,
+                     config_path="/tmp/cfg.json", css_path="/tmp/style.css")
+    assert full[full.index("-c") + 1] == "/tmp/cfg.json"
+    assert full[full.index("-C") + 1] == "/tmp/style.css"
 
 
 # --- display_size: undo the render scale, then cap --------------------------
@@ -242,6 +254,44 @@ def test_width_budget_without_a_usable_view():
     assert width_budget(0.66, 0) == 528   # falls back to an 800px view
 
 
+# --- node_padding_config: one padding setting, every diagram type ------------
+
+def test_node_padding_config_covers_the_types_that_support_it():
+    out = node_padding_config(16)
+    assert out["flowchart"]["padding"] == 16
+    assert out["sequence"]["wrapPadding"] == 16      # participant boxes
+    assert out["class"]["padding"] == 16
+    assert out["mindmap"]["padding"] == 16
+    assert out["block"]["padding"] == 16
+    assert out["timeline"]["padding"] == 16
+    assert out["c4"]["c4ShapePadding"] == 16
+
+
+def test_node_padding_config_omits_types_that_ignore_it():
+    # verified by rendering: these ignore every padding key they declare
+    out = node_padding_config(16)
+    for absent in ("state", "requirement", "kanban", "architecture", "packet", "journey"):
+        assert absent not in out
+
+
+def test_node_padding_config_disabled():
+    assert node_padding_config(0) == {}
+    assert node_padding_config(None) == {}
+
+
+def test_node_padding_config_merges_as_a_base():
+    # a user setting for one type must not lose the padding for the others
+    out = merged_config({"flowchart": {"nodeSpacing": 60}}, node_padding_config(16))
+    assert out["flowchart"] == {"padding": 16, "nodeSpacing": 60}
+    assert out["sequence"]["wrapPadding"] == 16
+
+
+def test_node_padding_config_user_can_override_one_type():
+    out = merged_config({"flowchart": {"padding": 2}}, node_padding_config(16))
+    assert out["flowchart"]["padding"] == 2
+    assert out["class"]["padding"] == 16
+
+
 # --- theme selection: match the diagram to the color scheme -----------------
 
 def test_luminance_extremes():
@@ -272,20 +322,69 @@ def test_auto_theme_follows_background():
 
 # --- with_theme_directive: theme a kroki render, which has no -t flag --------
 
-def test_with_theme_directive_prepends_init():
-    out = with_theme_directive("graph TD; A-->B;", "dark")
+def test_with_init_directive_prepends_the_theme():
+    out = with_init_directive("graph TD; A-->B;", "dark", None)
     assert out.startswith('%%{init: {"theme": "dark"}}%%\n')
     assert out.endswith("graph TD; A-->B;")
 
 
-def test_with_theme_directive_respects_an_existing_init():
+def test_with_init_directive_carries_the_config():
+    out = with_init_directive("graph TD; A-->B;", "dark", {"flowchart": {"padding": 20}})
+    head = out.split("\n")[0]
+    assert head.startswith("%%{init: ") and head.endswith("}%%")
+    assert '"padding": 20' in head and '"theme": "dark"' in head
+
+
+def test_with_init_directive_config_without_a_theme():
+    out = with_init_directive("graph TD; A-->B;", "default", {"fontSize": 18})
+    assert '"fontSize": 18' in out
+    assert "theme" not in out.split("\n")[0]
+
+
+def test_with_init_directive_respects_an_existing_init():
+    # a diagram that configures itself wins: the author was specific on purpose
     src = '%%{init: {"theme": "forest"}}%%\ngraph TD; A-->B;'
-    assert with_theme_directive(src, "dark") == src
+    assert with_init_directive(src, "dark", {"fontSize": 18}) == src
 
 
-def test_with_theme_directive_default_theme_is_left_alone():
+def test_with_init_directive_nothing_to_add():
     src = "graph TD; A-->B;"
-    assert with_theme_directive(src, "default") == src
+    assert with_init_directive(src, "default", None) == src
+    assert with_init_directive(src, "default", {}) == src
+
+
+def test_with_init_directive_is_deterministic():
+    # the directive rides in the cache key, so key order must not wobble
+    config = {"z": 1, "a": {"n": 2, "m": 3}}
+    first = with_init_directive("graph TD;", "dark", config)
+    assert first == with_init_directive("graph TD;", "dark", dict(reversed(list(config.items()))))
+
+
+# --- merged_config: per-diagram-type defaults, user settings on top ----------
+
+def test_merged_config_is_empty_without_user_settings():
+    assert merged_config(None) == {}
+    assert merged_config({}) == {}
+
+
+def test_merged_config_passes_user_settings_through():
+    assert merged_config({"flowchart": {"padding": 20}}) == {"flowchart": {"padding": 20}}
+
+
+def test_merged_config_merges_one_level_deep():
+    out = merged_config({"flowchart": {"padding": 20}}, {"flowchart": {"nodeSpacing": 60}})
+    assert out["flowchart"] == {"nodeSpacing": 60, "padding": 20}
+
+
+def test_merged_config_user_wins_over_defaults():
+    out = merged_config({"flowchart": {"padding": 20}}, {"flowchart": {"padding": 4}})
+    assert out["flowchart"]["padding"] == 20
+
+
+def test_merged_config_leaves_defaults_untouched():
+    defaults = {"flowchart": {"padding": 4}}
+    merged_config({"flowchart": {"padding": 20}}, defaults)
+    assert defaults == {"flowchart": {"padding": 4}}
 
 
 # --- tiny runner so this file works without pytest ---------------------------

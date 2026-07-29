@@ -91,6 +91,21 @@
     // is displayed at 1/scale of the rendered size, so this trades cache size for sharpness.
     "mermaid_scale": 2,
 
+    // Padding between a node's text and its border, applied to every diagram type that
+    // supports one. Mermaid has no global setting for it and names the key differently
+    // per type, so the plugin spreads one value across all of them. 0 keeps mermaid's
+    // own defaults; override a single type through mermaid_config below.
+    "mermaid_node_padding": 16,
+
+    // Mermaid's own configuration, merged over the above one level deep. Anything valid
+    // in a %%{init: ...}%% directive works here, and a diagram carrying its own init
+    // directive overrides all of it. See docs/mermaid.md for the options.
+    "mermaid_config": {},
+
+    // A CSS file applied to the rendered page, for anything the config can't express.
+    // Local renders only. e.g. "~/.config/markdown_rich/mermaid.css"
+    "mermaid_css_file": "",
+
     // How wide the inline diagram may be drawn (after undoing mermaid_scale).
     // A fraction (0 < n <= 1) is relative to the view, whole numbers are pixels, and
     // 0 fills the view. The default keeps the diagram a readable preview; "Open image"
