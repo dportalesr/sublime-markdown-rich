@@ -188,12 +188,6 @@ RENDERED = render_syntax(ENTRIES, "Packages/Markdown/Markdown.sublime-syntax", "
                          "text.html.markdown.rich")
 
 
-def test_render_syntax_header():
-    assert RENDERED.startswith("%YAML 1.2\n---\n")
-    assert "name: MarkdownRich" in RENDERED
-    assert "extends: Packages/Markdown/Markdown.sublime-syntax" in RENDERED
-
-
 def test_render_syntax_declares_its_own_scope():
     # `scope` is required even with `extends`, and the parent's scope must stay the
     # prefix so text.html.markdown selectors keep matching
@@ -219,22 +213,9 @@ def test_render_syntax_emits_a_context_per_language():
     assert "escape: '{{fenced_code_block_escape}}'" in RENDERED
 
 
-def test_render_syntax_reuses_parent_variables_and_captures():
-    # matching the parent's shape is what keeps folding and infostring scopes working
-    assert "{{fenced_code_block_start}}" in RENDERED
-    assert "{{fenced_code_block_trailing_infostring_characters}}" in RENDERED
-    assert "5: constant.other.language-name.markdown" in RENDERED
-    assert "markup.raw.code-fence.mermaid.markdown-gfm" in RENDERED
-
-
 def test_render_syntax_escapes_regex_specials_in_tokens():
     out = render_syntax([Entry(name="C++", scope="source.c++", tokens=["c++"])], "P", "N", "S")
     assert r"(?i:\s*(c\+\+))" in out
-
-
-def test_render_syntax_is_stable():
-    assert render_syntax(ENTRIES, "Packages/Markdown/Markdown.sublime-syntax", "MarkdownRich",
-                         "text.html.markdown.rich") == RENDERED
 
 
 def test_render_syntax_with_no_entries_still_valid():

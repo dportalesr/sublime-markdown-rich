@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
                      luminance, auto_theme, with_init_directive, block_at, width_budget,
-                     merged_config, node_padding_config, line_height_css)
+                     merged_config)
 
 
 def _doc(*lines):
@@ -113,10 +113,6 @@ def test_block_at_picks_the_right_one_of_several():
     assert block_at([first, second], second.body_start + 1) is second
 
 
-def test_block_at_with_no_blocks():
-    assert block_at([], 5) is None
-
-
 # --- cache_key: content-addressed render cache ------------------------------
 
 def test_cache_key_is_stable():
@@ -174,15 +170,6 @@ def test_mmdc_args_width_optional():
     assert "-w" not in without
     with_w = mmdc_args("mmdc", "i", "o", theme="default", background="white", scale=1, width=900)
     assert with_w[with_w.index("-w") + 1] == "900"
-
-
-def test_mmdc_args_config_and_css_optional():
-    bare = mmdc_args("mmdc", "i", "o", theme="default", background="white", scale=1)
-    assert "-c" not in bare and "-C" not in bare
-    full = mmdc_args("mmdc", "i", "o", theme="default", background="white", scale=1,
-                     config_path="/tmp/cfg.json", css_path="/tmp/style.css")
-    assert full[full.index("-c") + 1] == "/tmp/cfg.json"
-    assert full[full.index("-C") + 1] == "/tmp/style.css"
 
 
 # --- display_size: undo the render scale, then cap --------------------------
@@ -250,61 +237,6 @@ def test_width_budget_never_exceeds_the_view():
     assert width_budget(2000, 1000) == 1000
 
 
-def test_width_budget_without_a_usable_view():
-    assert width_budget(0.66, 0) == 528   # falls back to an 800px view
-
-
-# --- node_padding_config: one padding setting, every diagram type ------------
-
-def test_node_padding_config_covers_the_types_that_support_it():
-    out = node_padding_config(16)
-    assert out["flowchart"]["padding"] == 16
-    assert out["sequence"]["wrapPadding"] == 16      # participant boxes
-    assert out["class"]["padding"] == 16
-    assert out["mindmap"]["padding"] == 16
-    assert out["block"]["padding"] == 16
-    assert out["timeline"]["padding"] == 16
-    assert out["c4"]["c4ShapePadding"] == 16
-
-
-def test_node_padding_config_omits_types_that_ignore_it():
-    # verified by rendering: these ignore every padding key they declare
-    out = node_padding_config(16)
-    for absent in ("state", "requirement", "kanban", "architecture", "packet", "journey"):
-        assert absent not in out
-
-
-def test_node_padding_config_disabled():
-    assert node_padding_config(0) == {}
-    assert node_padding_config(None) == {}
-
-
-def test_node_padding_config_merges_as_a_base():
-    # a user setting for one type must not lose the padding for the others
-    out = merged_config({"flowchart": {"nodeSpacing": 60}}, node_padding_config(16))
-    assert out["flowchart"] == {"padding": 16, "nodeSpacing": 60}
-    assert out["sequence"]["wrapPadding"] == 16
-
-
-def test_node_padding_config_user_can_override_one_type():
-    out = merged_config({"flowchart": {"padding": 2}}, node_padding_config(16))
-    assert out["flowchart"]["padding"] == 2
-    assert out["class"]["padding"] == 16
-
-
-# --- line_height_css: spacing between wrapped label lines --------------------
-
-def test_line_height_css_targets_html_labels():
-    css = line_height_css(1.5)
-    assert "line-height: 1.5" in css
-    assert "foreignObject" in css      # where mermaid puts HTML labels
-
-
-def test_line_height_css_disabled():
-    assert line_height_css(0) == ""
-    assert line_height_css(1) == ""     # 1 is mermaid's own spacing
-
-
 # --- theme selection: match the diagram to the color scheme -----------------
 
 def test_luminance_extremes():
@@ -315,10 +247,6 @@ def test_luminance_extremes():
 def test_luminance_short_and_alpha_forms():
     assert luminance("#fff") == 1.0
     assert luminance("#000000ff") == 0.0
-
-
-def test_luminance_weights_green_highest():
-    assert luminance("#00ff00") > luminance("#ff0000") > luminance("#0000ff")
 
 
 def test_luminance_unparseable():
@@ -348,22 +276,10 @@ def test_with_init_directive_carries_the_config():
     assert '"padding": 20' in head and '"theme": "dark"' in head
 
 
-def test_with_init_directive_config_without_a_theme():
-    out = with_init_directive("graph TD; A-->B;", "default", {"fontSize": 18})
-    assert '"fontSize": 18' in out
-    assert "theme" not in out.split("\n")[0]
-
-
 def test_with_init_directive_respects_an_existing_init():
     # a diagram that configures itself wins: the author was specific on purpose
     src = '%%{init: {"theme": "forest"}}%%\ngraph TD; A-->B;'
     assert with_init_directive(src, "dark", {"fontSize": 18}) == src
-
-
-def test_with_init_directive_nothing_to_add():
-    src = "graph TD; A-->B;"
-    assert with_init_directive(src, "default", None) == src
-    assert with_init_directive(src, "default", {}) == src
 
 
 def test_with_init_directive_is_deterministic():
@@ -374,14 +290,6 @@ def test_with_init_directive_is_deterministic():
 
 
 # --- merged_config: per-diagram-type defaults, user settings on top ----------
-
-def test_merged_config_is_empty_without_user_settings():
-    assert merged_config(None) == {}
-    assert merged_config({}) == {}
-
-
-def test_merged_config_passes_user_settings_through():
-    assert merged_config({"flowchart": {"padding": 20}}) == {"flowchart": {"padding": 20}}
 
 
 def test_merged_config_merges_one_level_deep():

@@ -83,11 +83,6 @@ def test_first_matching_index_subsection():
     assert first_matching_index("3.1", DOC) == 4
 
 
-def test_first_matching_index_duplicate_wins_first():
-    # two "3.1" headings -> the earlier one
-    assert first_matching_index("3.1", DOC) == 4
-
-
 def test_first_matching_index_miss():
     assert first_matching_index("9", DOC) is None
     assert first_matching_index("3.2", DOC) is None
