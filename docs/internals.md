@@ -9,6 +9,7 @@ Logic that doesn't need a running editor lives in modules that import no `sublim
 | Module               | Responsibility                                                               |
 |----------------------|------------------------------------------------------------------------------|
 | `section_ref.py`     | Parsing `§N` references, matching them against numbered headings             |
+| `anchor.py`          | Splitting `path#fragment` targets, GitHub heading slugs, anchor matching     |
 | `mermaid.py`         | Finding mermaid fences, cache keys, render invocations, theme choice, sizing |
 | `markdown_syntax.py` | Which languages need a fence rule, and what the generated syntax looks like  |
 | `markdown_rich.py`   | Everything that touches a view: phantoms, folds, regions, threads, commands  |
@@ -31,6 +32,12 @@ Relative paths in `[text](path)` and `![alt](path)` are resolved against, in ord
 The first candidate that exists on disk wins; if none do, the project-root candidate is reported as the missing path. That's what lets `[design](docs/design.md)` resolve from anywhere in the project.
 
 A trailing `:line` or `:line:col` is stripped before resolution and reapplied as the caret position (`ENCODED_POSITION`). Only a trailing digit group counts, so the colon in `file://` is never mistaken for a line number. Absolute paths, `~` and `file:///` URLs are all accepted.
+
+## Heading anchors
+
+A `#fragment` is split off before path resolution, otherwise it travels into the filename and every anchored link reports "cannot open". Slugs follow GitHub's rules, since that's what the links in a README were written against: inline markup stripped, punctuation dropped, lowercased, whitespace to hyphens, and repeats suffixed `-1`, `-2`. Headings come from the same `markup.heading` scan as §-refs, so a `##` inside a fence can't answer a link.
+
+An empty path (`[label](#usage)`) jumps within the current buffer. For another file, `open_file` returns before the buffer has content, and being loaded still doesn't mean being scoped: `find_by_selector` can come back empty for a beat afterwards, which looks exactly like a missing anchor. So the jump polls twice over, with a long budget for loading and a short one for scoping, and only then reports the miss. An explicit `:line` wins over an anchor, being the more precise of the two.
 
 ## Side-by-side reveal
 
@@ -113,6 +120,7 @@ Cache filenames avoid `@`: `pathname2url` percent-escapes it, and minihtml takes
 
 ```bash
 python3 tests/test_section_ref.py     # built-in runner, no dependencies
+python3 tests/test_anchor.py
 python3 tests/test_mermaid.py
 python3 tests/test_markdown_syntax.py
 pytest tests/                         # or the whole suite at once

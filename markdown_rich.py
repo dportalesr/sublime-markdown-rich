@@ -17,11 +17,12 @@ import webbrowser
 import sublime
 import sublime_plugin
 
-# Pure section-reference and mermaid logic lives in sibling modules with no `sublime`
-# import so they stay unit-testable. Relative import inside the package, plain import
-# as fallback.
+# Pure section-reference, anchor and mermaid logic lives in sibling modules with no
+# `sublime` import so they stay unit-testable. Relative import inside the package, plain
+# import as fallback.
 try:
     from .section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
+    from .anchor import split_anchor, anchor_index
     from .mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
                           auto_theme, with_init_directive, block_at, width_budget,
                           merged_config, node_padding_config, line_height_css)
@@ -30,6 +31,7 @@ try:
                                   drop_specializations, covered_scopes)
 except (ImportError, ValueError, SystemError):
     from section_ref import SECTION_REF_RE, ref_at as _section_ref_number, first_matching_index
+    from anchor import split_anchor, anchor_index
     from mermaid import (find_blocks, cache_key, remote_url, mmdc_args, display_size,
                          auto_theme, with_init_directive, block_at, width_budget,
                          merged_config, node_padding_config, line_height_css)
@@ -246,6 +248,61 @@ def _goto_region(view, region):
     view.sel().clear()
     view.sel().add(sublime.Region(region.begin()))
     view.show_at_center(region)
+
+
+# --- heading anchors (`file.md#some-heading`) --------------------------------
+
+def _anchor_target(view, anchor):
+    """Region of the first heading whose slug is `anchor`, or None.
+
+    Shares `_heading_line_regions` with §-refs, so anchors are matched against real
+    headings only: `##`-looking lines inside fenced code can't answer a link.
+    """
+    lines = _heading_line_regions(view)
+    idx = anchor_index(anchor, [view.substr(r) for r in lines])
+    return lines[idx] if idx is not None else None
+
+
+_ANCHOR_POLL_MS = 50
+#: `open_file` returns before the buffer has content, and a cold open of a large file
+#: takes a moment.
+_ANCHOR_LOAD_TIMEOUT_MS = 3000
+#: Loading finishing isn't the same as being scoped: `find_by_selector` can come back
+#: empty for a beat afterwards, which is indistinguishable from a genuine miss.
+_ANCHOR_SCAN_TIMEOUT_MS = 500
+
+
+def _jump_to_anchor(view, anchor):
+    """Move the caret to the heading `anchor` names, or report the miss."""
+    region = _anchor_target(view, anchor)
+    if region is None:
+        sublime.status_message("MarkdownRich: no anchor #" + anchor)
+        return
+    _goto_region(view, region)
+
+
+def _jump_to_anchor_when_ready(view, anchor, loading=0, scanning=0):
+    """Jump to `anchor` in a freshly-opened `view`, once it can be searched."""
+    if not view.is_valid():
+        return
+    if view.is_loading():
+        if loading < _ANCHOR_LOAD_TIMEOUT_MS:
+            sublime.set_timeout(
+                lambda: _jump_to_anchor_when_ready(
+                    view, anchor, loading + _ANCHOR_POLL_MS, scanning),
+                _ANCHOR_POLL_MS)
+        return
+    region = _anchor_target(view, anchor)
+    if region is not None:
+        _goto_region(view, region)
+        return
+    if scanning < _ANCHOR_SCAN_TIMEOUT_MS:
+        sublime.set_timeout(
+            lambda: _jump_to_anchor_when_ready(
+                view, anchor, loading, scanning + _ANCHOR_POLL_MS),
+            _ANCHOR_POLL_MS)
+        return
+    sublime.status_message("MarkdownRich: no anchor #" + anchor)
 
 
 _POPUP_STYLE = (
@@ -1686,14 +1743,18 @@ class MarkdownRichOpenLinkCommand(sublime_plugin.TextCommand):
         if re.match(r'^(https?|ftp|mailto):', url, re.I):
             webbrowser.open(url)
             return
-        file_ref, line, col = _split_position(url)
+        target, anchor = split_anchor(url)
+        if anchor and not target:
+            _jump_to_anchor(view, anchor)   # `[label](#usage)`: same document
+            return
+        file_ref, line, col = _split_position(target)
         path = _resolve_local(view, file_ref)
         if not (path and os.path.exists(path)):
             sublime.status_message("MarkdownRich: cannot open " + url)
             return
         if side_by_side is None:
             side_by_side = _settings().get("open_link_side_by_side", True)
-        self._open(path, line, col, side_by_side)
+        self._open(path, line, col, side_by_side, anchor)
 
     def _jump_to_section(self, view, label):
         """Move the caret to the numbered heading a `§N` reference points at."""
@@ -1703,7 +1764,7 @@ class MarkdownRichOpenLinkCommand(sublime_plugin.TextCommand):
             return
         _goto_region(view, region)
 
-    def _open(self, path, line, col, side_by_side):
+    def _open(self, path, line, col, side_by_side, anchor=None):
         window = self.view.window()
         loc, flags = path, 0
         if line is not None:
@@ -1714,6 +1775,9 @@ class MarkdownRichOpenLinkCommand(sublime_plugin.TextCommand):
         new_view = window.open_file(loc, flags)
         if side_by_side:
             _reveal_beside(window, self.view, new_view)
+        # An explicit `:line` wins over an anchor: it's the more precise of the two.
+        if anchor and line is None:
+            _jump_to_anchor_when_ready(new_view, anchor)
 
 
 def plugin_loaded():

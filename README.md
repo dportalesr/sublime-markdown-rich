@@ -35,6 +35,7 @@ No preview pane, no split window, no build step. The file you're editing is the 
 
 - **Open what you're reading**: a keystroke or a triple-click follows a link, local files into Sublime and URLs into the browser
 - **Land where you meant to**: `[deactivate](app/models/report.rb:167)` opens that file at that line
+- **Follow anchors like GitHub does**: `[rules](docs/TRIGGER_RULES.md#over-the-client-lifecycle)` opens the file at that heading, and `[usage](#usage)` jumps within the document
 - **Keep your place**: opened files sit beside the document instead of replacing it, and your window layout is left alone
 - **Cross-reference sections** with `§3` or `§3.1`, which jump to the matching numbered heading
 - **Hover a reference to see where it goes**, then click through if that's where you wanted to be
@@ -70,6 +71,7 @@ Open any Markdown file and it starts working. For highlighted code fences, pick 
 | open a Markdown file        | images render, `§`-references become links                    |
 | `ctrl+enter` on a link      | opens it, beside the document or in your browser              |
 | triple-click a link         | the same, without touching the keyboard                       |
+| a link ending in `#heading` | opens the file and lands on that heading                      |
 | `ctrl+enter` on a `§3.1`    | jumps to that section                                         |
 | hover a `§3.1`              | shows which heading it points at, click to follow             |
 | click an image              | cycles its size                                               |
